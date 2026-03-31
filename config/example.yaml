@@ -1,0 +1,93 @@
+# SSH Host Selector — example configuration
+#
+# grouplist   — ordered list of group names for display
+# groups      — per-group defaults applied to every host in that group
+# hosts       — individual host entries
+#
+# Per-group defaults (under `groups`):
+#   users       — default user list for all hosts in the group
+#   proxy_jump  — default ProxyJump for all hosts in the group
+#
+# Per-host fields:
+#   hostname    — required; address SSH connects to
+#   nickname    — display name in the TUI list (defaults to hostname)
+#   group       — must match a grouplist entry
+#   port        — SSH port (default 22)
+#   users       — overrides the group users list; first entry is the default login
+#   proxy_jump  — overrides the group proxy_jump; set to null to disable
+#   user        — legacy scalar form; equivalent to  users: [value]
+#
+# The special user value "default" resolves to the current OS user at runtime.
+
+grouplist:
+  - Access
+  - Backend
+  - Monitoring
+
+groups:
+  Access:
+    # No proxy_jump — access hosts are directly reachable
+    users:
+      - default       # current OS user
+      - admin
+
+  Backend:
+    proxy_jump: gateway.example.com
+    users:
+      - default
+      - deploy
+      - dbadmin
+
+  Monitoring:
+    proxy_jump: gateway.example.com
+    users:
+      - default
+      - ci
+
+hosts:
+
+  # ── Access ────────────────────────────────────────────────────────────────
+  # Inherits: users=[default, admin], no proxy_jump
+
+  - nickname: "Jump Box"
+    hostname: gateway.example.com
+    group: Access
+
+  - nickname: "VPN Gateway"
+    hostname: vpn.example.com
+    group: Access
+    users:              # override: restrict to admin only on this host
+      - admin
+
+  # ── Backend ───────────────────────────────────────────────────────────────
+  # Inherits: proxy_jump=gateway.example.com, users=[default, deploy, dbadmin]
+
+  - nickname: "DB Primary"
+    hostname: db1.internal.example.com
+    group: Backend
+
+  - nickname: "Web Server"
+    hostname: web.example.com
+    group: Backend
+    port: 2222
+    proxy_jump: null    # directly reachable on non-standard port; override group proxy
+
+  - nickname: "DB Replica"
+    hostname: db2.internal.example.com
+    group: Backend
+    users:              # override: different default user for this host
+      - dbadmin
+      - default
+
+  # ── Monitoring ────────────────────────────────────────────────────────────
+  # Inherits: proxy_jump=gateway.example.com, users=[default, ci]
+
+  - nickname: "Build Node"
+    hostname: build01.lab.example.com
+    group: Monitoring
+
+  # ── (no group — appears under "Other") ───────────────────────────────────
+
+  - nickname: "Scratch Box"
+    hostname: scratch.example.com
+    user: deploy        # scalar form still accepted; single user, no submenu
