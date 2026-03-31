@@ -22,6 +22,7 @@ grouplist:
   - Tracker
   - Calorimeter
   - Cosmic Ray Veto
+  - Stopping Target Monitor
   - Test Stand
 
 groups:
@@ -93,7 +94,7 @@ groups:
       - mu2etrk
 
   Test Stand:
-    proxy_jump: mu2egateway01.fnal.gov
+    proxy_jump: mu2edaq-gateway.fnal.gov
     users:
       - default
       - mu2edaq
@@ -262,8 +263,32 @@ hosts:
 
   - nickname: "Stopping Target Monitor 01"
     hostname: mu2e-stm-01.fnal.gov
-    group: Test Stand
+    group: Stopping Target Monitor
 
   - nickname: "Stopping Target Monitor 02"
     hostname: mu2e-stm-02.fnal.gov
+    group: Stopping Target Monitor
+
+    # --- Test Stand ─────────────────────────────────────────────────────────────
+  - nickname: "DAQ-01"
+    hostname: mu2edaq01.fnal.gov
     group: Test Stand
+  - nickname: "DAQ-04"
+    hostname: mu2edaq04.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-07"
+    hostname: mu2edaq07.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-10"
+    hostname: mu2edaq10.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-11"
+    hostname: mu2edaq11.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-13"
+    hostname: mu2edaq13.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-22"
+    hostname: mu2edaq22.fnal.gov
+    group: Test Stand
+  

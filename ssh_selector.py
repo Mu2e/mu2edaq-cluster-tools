@@ -2,9 +2,11 @@
 """SSH Host Selector - A TUI application for managing SSH connections."""
 
 import asyncio
+import ipaddress
 import os
 import re
 import socket
+import struct
 import sys
 import subprocess
 import argparse
@@ -57,12 +59,25 @@ class Host:
         if not self.users:
             self.users = ["default"]
 
-    def ssh_command(self, user: str) -> list[str]:
+    def ssh_command(self, user: str, skip_proxy: bool = False) -> list[str]:
         """Build the SSH command list for this host and the given user entry."""
         cmd = ["ssh"]
         if self.port != 22:
             cmd.extend(["-p", str(self.port)])
-        if self.proxy_jump:
+        if self.proxy_jump and not skip_proxy:
+            cmd.extend(["-J", self.proxy_jump])
+        cmd.extend(["-l", resolve_user(user)])
+        cmd.append(self.hostname)
+        return cmd
+
+    def tunnel_command(
+        self, user: str, local_port: int, remote_port: int, skip_proxy: bool = False
+    ) -> list[str]:
+        """Build an SSH tunnel command: ssh -N -L local:localhost:remote ..."""
+        cmd = ["ssh", "-N", "-L", f"{local_port}:localhost:{remote_port}"]
+        if self.port != 22:
+            cmd.extend(["-p", str(self.port)])
+        if self.proxy_jump and not skip_proxy:
             cmd.extend(["-J", self.proxy_jump])
         cmd.extend(["-l", resolve_user(user)])
         cmd.append(self.hostname)
@@ -258,13 +273,64 @@ class KerberosPanel(Widget):
 # Network info panel
 # ---------------------------------------------------------------------------
 
+def _detect_local_networks_sync() -> list[ipaddress.IPv4Network]:
+    """Return local IPv4 networks parsed from interface configuration."""
+    networks: list[ipaddress.IPv4Network] = []
+
+    # Linux: ip addr show  →  "inet x.x.x.x/prefix"
+    try:
+        out = subprocess.check_output(
+            ["ip", "addr", "show"], stderr=subprocess.DEVNULL, text=True
+        )
+        for m in re.finditer(r"inet (\d+\.\d+\.\d+\.\d+/\d+)", out):
+            try:
+                networks.append(ipaddress.IPv4Interface(m.group(1)).network)
+            except ValueError:
+                pass
+        if networks:
+            return networks
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    # macOS / fallback: ifconfig  →  "inet x.x.x.x netmask 0xhhhhhhhh"
+    #                             or "inet x.x.x.x netmask d.d.d.d"
+    try:
+        out = subprocess.check_output(
+            ["ifconfig"], stderr=subprocess.DEVNULL, text=True
+        )
+        for m in re.finditer(
+            r"inet (\d+\.\d+\.\d+\.\d+)\s+netmask\s+(0x[0-9a-fA-F]+|\d+\.\d+\.\d+\.\d+)",
+            out,
+        ):
+            ip_str, mask_raw = m.group(1), m.group(2)
+            try:
+                if mask_raw.lower().startswith("0x"):
+                    mask_str = socket.inet_ntoa(struct.pack(">I", int(mask_raw, 16)))
+                else:
+                    mask_str = mask_raw
+                networks.append(
+                    ipaddress.IPv4Interface(f"{ip_str}/{mask_str}").network
+                )
+            except (ValueError, OSError):
+                pass
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    return networks
+
+
+async def detect_local_networks() -> list[ipaddress.IPv4Network]:
+    """Async wrapper around _detect_local_networks_sync."""
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, _detect_local_networks_sync)
+
+
 async def get_local_network_info() -> str:
     """Return Rich-markup text describing the local network interface."""
     loop = asyncio.get_event_loop()
     try:
         hostname = socket.gethostname()
         fqdn = await loop.run_in_executor(None, socket.getfqdn)
-        # Probe the outbound interface IP without sending any packets
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             try:
                 s.connect(("8.8.8.8", 80))
@@ -275,10 +341,15 @@ async def get_local_network_info() -> str:
                 )
         domain_parts = fqdn.split(".")
         domain = ".".join(domain_parts[1:]) if len(domain_parts) > 1 else "(local)"
+        # Show non-loopback subnets
+        nets = await detect_local_networks()
+        net_strs = [str(n) for n in nets if not n.is_loopback]
+        net_line = ", ".join(net_strs) if net_strs else "(unknown)"
         return (
-            f"[dim]Host  :[/dim]  {hostname}\n"
-            f"[dim]IP    :[/dim]  {local_ip}\n"
-            f"[dim]Domain:[/dim]  {domain}"
+            f"[dim]Host   :[/dim]  {hostname}\n"
+            f"[dim]IP     :[/dim]  {local_ip}\n"
+            f"[dim]Domain :[/dim]  {domain}\n"
+            f"[dim]Subnets:[/dim]  {net_line}"
         )
     except Exception:
         return "[dim]Network info unavailable.[/dim]"
@@ -432,6 +503,100 @@ class SSHErrorModal(ModalScreen):
 
 
 # ---------------------------------------------------------------------------
+# Tunnel port modal
+# ---------------------------------------------------------------------------
+
+class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
+    """Modal overlay for entering local and remote port numbers for an SSH tunnel."""
+
+    CSS = """
+    TunnelPortModal {
+        align: center middle;
+    }
+
+    #tunnel-container {
+        width: 54;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #tunnel-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+
+    .tunnel-label {
+        margin-top: 1;
+        color: $text-muted;
+    }
+
+    #tunnel-hint {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 1;
+    }
+
+    #tunnel-error {
+        color: $error;
+        margin-top: 0;
+    }
+    """
+
+    BINDINGS = [
+        Binding("escape", "dismiss_modal", "Cancel", show=True),
+    ]
+
+    def __init__(self, host: Host) -> None:
+        super().__init__()
+        self.host = host
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="tunnel-container"):
+            yield Label(f"Open tunnel to {self.host.nickname}", id="tunnel-title")
+            yield Label("Local port:", classes="tunnel-label")
+            yield Input(placeholder="e.g. 8080", id="local-port")
+            yield Label("Remote port (on destination):", classes="tunnel-label")
+            yield Input(placeholder="e.g. 8080", id="remote-port")
+            yield Label("", id="tunnel-error")
+            yield Label(
+                "Tab / Enter to move between fields  ·  Enter on second field to confirm",
+                id="tunnel-hint",
+            )
+
+    def on_mount(self) -> None:
+        self.query_one("#local-port", Input).focus()
+
+    @on(Input.Submitted, "#local-port")
+    def _local_submitted(self) -> None:
+        self.query_one("#remote-port", Input).focus()
+
+    @on(Input.Submitted, "#remote-port")
+    def _remote_submitted(self) -> None:
+        self._try_submit()
+
+    def _try_submit(self) -> None:
+        local_str = self.query_one("#local-port", Input).value.strip()
+        remote_str = self.query_one("#remote-port", Input).value.strip()
+        error_label = self.query_one("#tunnel-error", Label)
+        try:
+            local_port = int(local_str)
+            remote_port = int(remote_str)
+            if not (1 <= local_port <= 65535):
+                raise ValueError(f"Local port {local_port} out of range 1–65535")
+            if not (1 <= remote_port <= 65535):
+                raise ValueError(f"Remote port {remote_port} out of range 1–65535")
+            self.dismiss((local_port, remote_port))
+        except ValueError as exc:
+            error_label.update(str(exc) if str(exc) else "Please enter valid port numbers.")
+
+    def action_dismiss_modal(self) -> None:
+        self.dismiss(None)
+
+
+# ---------------------------------------------------------------------------
 # Host list items
 # ---------------------------------------------------------------------------
 
@@ -446,33 +611,45 @@ class GroupHeader(ListItem):
         yield Label(f"  {self.group_name}")
 
 
-class HostItem(ListItem):
-    """A list item wrapping a Host, with a DNS-status indicator."""
+class HostPairItem(ListItem):
+    """A list item holding one or two hosts displayed side by side."""
 
-    def __init__(self, host: Host) -> None:
+    def __init__(self, hosts: list[Host]) -> None:
         super().__init__()
-        self.host = host
+        self.hosts = hosts  # 1 or 2 entries
 
     def compose(self) -> ComposeResult:
         with Horizontal():
-            yield Label(" ~", classes="host-status")
-            yield Label(self.host.nickname, classes="host-name")
+            for i, host in enumerate(self.hosts):
+                with Horizontal(classes=f"host-col col-{i}"):
+                    yield Label(" ~", classes=f"host-status host-status-{i}")
+                    yield Label(host.nickname, classes="host-name")
 
-    def set_status(self, ip: Optional[str]) -> None:
-        """Update the DNS indicator.  ip=non-empty → resolved; None/empty → failed."""
-        label = self.query_one(".host-status", Label)
-        if ip:
-            label.update("[green] ●[/green]")
-        else:
-            label.update("[red] ●[/red]")
+    def set_status(self, hostname: str, ip: Optional[str]) -> None:
+        """Update the DNS indicator for the given hostname."""
+        for i, host in enumerate(self.hosts):
+            if host.hostname == hostname:
+                dot = "[green] ●[/green]" if ip else "[red] ●[/red]"
+                self.query_one(f".host-status-{i}", Label).update(dot)
 
 
 # ---------------------------------------------------------------------------
 # Main TUI application
 # ---------------------------------------------------------------------------
 
-# App result: (host, user-entry-string) or None if the user quit.
-AppResult = Optional[tuple[Host, str]]
+@dataclass
+class ConnectionRequest:
+    """Describes the connection the user wants to make."""
+    host: Host
+    user: str
+    skip_proxy: bool
+    mode: str = "shell"       # "shell" or "tunnel"
+    local_port: int = 0
+    remote_port: int = 0
+
+
+# App result: a ConnectionRequest, or None if the user quit.
+AppResult = Optional[ConnectionRequest]
 
 
 class SSHSelector(App[AppResult]):
@@ -553,7 +730,12 @@ class SSHSelector(App[AppResult]):
         height: 1fr;
     }
 
-    HostItem > Horizontal {
+    HostPairItem > Horizontal {
+        height: 1;
+    }
+
+    .host-col {
+        width: 1fr;
         height: 1;
     }
 
@@ -580,6 +762,16 @@ class SSHSelector(App[AppResult]):
         color: $text;
     }
 
+    HostPairItem.--highlight {
+        background: $surface;
+    }
+
+    .col-selected {
+        background: $accent;
+        color: $text;
+        text-style: bold;
+    }
+
     GroupHeader {
         background: $boost;
         color: $accent;
@@ -599,11 +791,12 @@ class SSHSelector(App[AppResult]):
     """
 
     BINDINGS = [
-        Binding("enter", "connect", "Connect"),
+        Binding("enter", "connect", "Connect", show=True),
+        Binding("t", "tunnel", "Tunnel"),
         Binding("/", "focus_search", "Search"),
         Binding("r", "renew_kerberos", "Renew Kerberos"),
-        Binding("escape", "escape_search", "Back to list", show=False),
         Binding("q", "quit", "Quit"),
+        Binding("escape", "escape_search", "Back to list", show=False),
     ]
 
     def __init__(self, config: Config, error: str = "") -> None:
@@ -613,8 +806,10 @@ class SSHSelector(App[AppResult]):
         self.filtered_hosts: list[Host] = list(config.hosts)
         self._selected_host: Optional[Host] = config.hosts[0] if config.hosts else None
         self._startup_error = error
+        self._column: int = 0   # 0 = left, 1 = right (two-column list)
         # hostname → resolved IP (None = lookup failed, key absent = not yet checked)
         self._host_ips: dict[str, Optional[str]] = {}
+        self._local_networks: list[ipaddress.IPv4Network] = []
 
     # ------------------------------------------------------------------
     # Layout
@@ -644,15 +839,24 @@ class SSHSelector(App[AppResult]):
         if self._startup_error:
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
         self.run_worker(self._resolve_all_hosts(), exclusive=False)
+        self.run_worker(self._load_local_networks(), exclusive=False)
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
 
+    @staticmethod
+    def _pair_hosts(group_hosts: list[Host]) -> list[HostPairItem]:
+        """Convert a flat host list into two-column HostPairItem rows."""
+        return [
+            HostPairItem(group_hosts[i: i + 2])
+            for i in range(0, len(group_hosts), 2)
+        ]
+
     def _build_list_items(self, hosts: list[Host]) -> list[ListItem]:
         """Return ListItems organized by group, with GroupHeader separators."""
         if not self.grouplist:
-            return [HostItem(h) for h in hosts]
+            return self._pair_hosts(hosts)
 
         # Bucket hosts by group, preserving per-group order
         in_grouplist: dict[str, list[Host]] = {g: [] for g in self.grouplist}
@@ -672,13 +876,13 @@ class SSHSelector(App[AppResult]):
             group_hosts = in_grouplist[group_name]
             if group_hosts:
                 items.append(GroupHeader(group_name))
-                items.extend(HostItem(h) for h in group_hosts)
+                items.extend(self._pair_hosts(group_hosts))
         for group_name, group_hosts in extra.items():
             items.append(GroupHeader(group_name))
-            items.extend(HostItem(h) for h in group_hosts)
+            items.extend(self._pair_hosts(group_hosts))
         if ungrouped:
             items.append(GroupHeader("Other"))
-            items.extend(HostItem(h) for h in ungrouped)
+            items.extend(self._pair_hosts(ungrouped))
 
         return items
 
@@ -688,9 +892,11 @@ class SSHSelector(App[AppResult]):
         for item in self._build_list_items(self.filtered_hosts):
             lv.append(item)
         # Re-apply any already-cached DNS status to freshly created items
-        for item in lv.query(HostItem):
-            if item.host.hostname in self._host_ips:
-                item.set_status(self._host_ips[item.host.hostname])
+        for item in lv.query(HostPairItem):
+            for host in item.hosts:
+                if host.hostname in self._host_ips:
+                    item.set_status(host.hostname, self._host_ips[host.hostname])
+        self._column = 0
         self._selected_host = self.filtered_hosts[0] if self.filtered_hosts else None
         self._update_detail(self._selected_host)
 
@@ -706,13 +912,31 @@ class SSHSelector(App[AppResult]):
             except Exception:
                 ip = None
             self._host_ips[host.hostname] = ip
-            for item in self.query(HostItem):
-                if item.host.hostname == host.hostname:
-                    item.set_status(ip)
+            for item in self.query(HostPairItem):
+                item.set_status(host.hostname, ip)
             if self._selected_host and self._selected_host.hostname == host.hostname:
                 self._update_detail(self._selected_host)
 
         await asyncio.gather(*(_one(h) for h in self.all_hosts))
+
+    async def _load_local_networks(self) -> None:
+        """Detect local subnets and cache them; refresh detail panel after."""
+        self._local_networks = await detect_local_networks()
+        if self._selected_host:
+            self._update_detail(self._selected_host)
+
+    def _should_skip_proxy(self, host: Host) -> bool:
+        """Return True if the host's IP is within a local subnet (proxy not needed)."""
+        if not host.proxy_jump or not self._local_networks:
+            return False
+        dest_ip = self._host_ips.get(host.hostname)
+        if not dest_ip:
+            return False
+        try:
+            dest = ipaddress.IPv4Address(dest_ip)
+            return any(dest in net for net in self._local_networks)
+        except ValueError:
+            return False
 
     def _update_detail(self, host: Optional[Host]) -> None:
         panel = self.query_one("#detail-content", Static)
@@ -721,7 +945,12 @@ class SSHSelector(App[AppResult]):
             return
 
         port_str = f"{host.port}" if host.port != 22 else "22 (default)"
-        proxy_str = host.proxy_jump if host.proxy_jump else "[dim]none[/dim]"
+        if not host.proxy_jump:
+            proxy_str = "[dim]none[/dim]"
+        elif self._should_skip_proxy(host):
+            proxy_str = f"[dim]{host.proxy_jump} (skipped — same subnet)[/dim]"
+        else:
+            proxy_str = host.proxy_jump
         if host.hostname not in self._host_ips:
             ip_str = "[dim]resolving…[/dim]"
         elif self._host_ips[host.hostname]:
@@ -754,14 +983,42 @@ class SSHSelector(App[AppResult]):
         )
 
     def _choose_and_exit(self, host: Host) -> None:
-        """Exit with host+user, showing the user modal only when needed."""
+        """Exit with a shell ConnectionRequest, showing the user modal only when needed."""
+        skip_proxy = self._should_skip_proxy(host)
         if len(host.users) == 1:
-            self.exit((host, host.users[0]))
+            self.exit(ConnectionRequest(host=host, user=host.users[0], skip_proxy=skip_proxy))
         else:
             def on_user_chosen(user: Optional[str]) -> None:
                 if user is not None:
-                    self.exit((host, user))
-                # user is None → modal was cancelled; stay on host list
+                    self.exit(ConnectionRequest(host=host, user=user, skip_proxy=skip_proxy))
+
+            self.push_screen(UserSelectModal(host), on_user_chosen)
+
+    def _choose_tunnel(self, host: Host) -> None:
+        """Start tunnel flow: pick user (if needed), then prompt for port numbers."""
+        skip_proxy = self._should_skip_proxy(host)
+
+        def show_port_modal(user: str) -> None:
+            def on_ports_chosen(ports: Optional[tuple[int, int]]) -> None:
+                if ports is not None:
+                    local_port, remote_port = ports
+                    self.exit(ConnectionRequest(
+                        host=host,
+                        user=user,
+                        skip_proxy=skip_proxy,
+                        mode="tunnel",
+                        local_port=local_port,
+                        remote_port=remote_port,
+                    ))
+
+            self.push_screen(TunnelPortModal(host), on_ports_chosen)
+
+        if len(host.users) == 1:
+            show_port_modal(host.users[0])
+        else:
+            def on_user_chosen(user: Optional[str]) -> None:
+                if user is not None:
+                    show_port_modal(user)
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
@@ -769,16 +1026,43 @@ class SSHSelector(App[AppResult]):
     # Event handlers
     # ------------------------------------------------------------------
 
+    def _apply_column_highlight(self, item: "HostPairItem") -> None:
+        """Highlight only the active column within the pair row."""
+        for i, col in enumerate(item.query(".host-col")):
+            if i == self._column:
+                col.add_class("col-selected")
+            else:
+                col.remove_class("col-selected")
+
     @on(ListView.Highlighted, "#list")
     def handle_highlighted(self, event: ListView.Highlighted) -> None:
-        if event.item and isinstance(event.item, HostItem):
-            self._selected_host = event.item.host
+        # Remove column highlight from any previously highlighted row
+        for col in self.query(".host-col"):
+            col.remove_class("col-selected")
+        if event.item and isinstance(event.item, HostPairItem):
+            self._column = 0
+            self._selected_host = event.item.hosts[0]
+            self._apply_column_highlight(event.item)
             self._update_detail(self._selected_host)
 
     @on(ListView.Selected, "#list")
     def handle_selected(self, event: ListView.Selected) -> None:
-        if event.item and isinstance(event.item, HostItem):
-            self._choose_and_exit(event.item.host)
+        if event.item and isinstance(event.item, HostPairItem):
+            self._choose_and_exit(self._selected_host or event.item.hosts[0])
+
+    def on_key(self, event) -> None:
+        """Left/right arrows switch the active column within a two-host row."""
+        if event.key not in ("left", "right"):
+            return
+        lv = self.query_one("#list", ListView)
+        item = lv.highlighted_child
+        if not isinstance(item, HostPairItem) or len(item.hosts) < 2:
+            return
+        self._column = 1 if event.key == "right" else 0
+        self._selected_host = item.hosts[self._column]
+        self._apply_column_highlight(item)
+        self._update_detail(self._selected_host)
+        event.stop()
 
     @on(Input.Changed, "#search-bar")
     def handle_search(self, event: Input.Changed) -> None:
@@ -799,6 +1083,10 @@ class SSHSelector(App[AppResult]):
     def action_connect(self) -> None:
         if self._selected_host:
             self._choose_and_exit(self._selected_host)
+
+    def action_tunnel(self) -> None:
+        if self._selected_host:
+            self._choose_tunnel(self._selected_host)
 
     def action_renew_kerberos(self) -> None:
         self.run_worker(self._do_renew_kerberos(), exclusive=True)
@@ -977,15 +1265,37 @@ Config file search order (when -c is not given):
         if result is None:
             sys.exit(0)
 
-        host, user_entry = result
-        cmd = host.ssh_command(user_entry)
-        print(f"Connecting: {' '.join(cmd)}")
-        proc = subprocess.run(cmd, stderr=subprocess.PIPE)
-        if proc.returncode != 0 and proc.stderr:
-            ssh_error = proc.stderr.decode(errors="replace").strip()
-        else:
+        host = result.host
+        user_entry = result.user
+        skip_proxy = result.skip_proxy
+
+        if skip_proxy and host.proxy_jump:
+            print(f"Note: proxy jump skipped (same subnet as {host.proxy_jump})")
+
+        if result.mode == "tunnel":
+            cmd = host.tunnel_command(
+                user_entry, result.local_port, result.remote_port, skip_proxy=skip_proxy
+            )
+            print(f"Opening tunnel: {' '.join(cmd)}")
+            print(
+                f"  localhost:{result.local_port}  →  "
+                f"{host.nickname}:{result.remote_port}"
+            )
+            print("  Press Ctrl+C to close the tunnel.")
+            try:
+                subprocess.run(cmd)
+            except KeyboardInterrupt:
+                print("\nTunnel closed.")
             ssh_error = ""
-        # SSH session ended — loop back to the selection screen
+        else:
+            cmd = host.ssh_command(user_entry, skip_proxy=skip_proxy)
+            print(f"Connecting: {' '.join(cmd)}")
+            proc = subprocess.run(cmd, stderr=subprocess.PIPE)
+            if proc.returncode != 0 and proc.stderr:
+                ssh_error = proc.stderr.decode(errors="replace").strip()
+            else:
+                ssh_error = ""
+        # Session/tunnel ended — loop back to the selection screen
 
 
 if __name__ == "__main__":
