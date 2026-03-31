@@ -4,6 +4,7 @@
 import asyncio
 import os
 import re
+import socket
 import sys
 import subprocess
 import argparse
@@ -254,6 +255,53 @@ class KerberosPanel(Widget):
 
 
 # ---------------------------------------------------------------------------
+# Network info panel
+# ---------------------------------------------------------------------------
+
+async def get_local_network_info() -> str:
+    """Return Rich-markup text describing the local network interface."""
+    loop = asyncio.get_event_loop()
+    try:
+        hostname = socket.gethostname()
+        fqdn = await loop.run_in_executor(None, socket.getfqdn)
+        # Probe the outbound interface IP without sending any packets
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            try:
+                s.connect(("8.8.8.8", 80))
+                local_ip = s.getsockname()[0]
+            except Exception:
+                local_ip = await loop.run_in_executor(
+                    None, socket.gethostbyname, hostname
+                )
+        domain_parts = fqdn.split(".")
+        domain = ".".join(domain_parts[1:]) if len(domain_parts) > 1 else "(local)"
+        return (
+            f"[dim]Host  :[/dim]  {hostname}\n"
+            f"[dim]IP    :[/dim]  {local_ip}\n"
+            f"[dim]Domain:[/dim]  {domain}"
+        )
+    except Exception:
+        return "[dim]Network info unavailable.[/dim]"
+
+
+class NetworkInfoPanel(Widget):
+    """Widget showing local network identity, detected once on startup."""
+
+    def compose(self) -> ComposeResult:
+        yield Static("Detecting network…", id="network-content")
+
+    def on_mount(self) -> None:
+        self.run_worker(self._fetch(), exclusive=True)
+
+    async def _fetch(self) -> None:
+        text = await get_local_network_info()
+        try:
+            self.query_one("#network-content", Static).update(text)
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # User selection modal
 # ---------------------------------------------------------------------------
 
@@ -399,14 +447,24 @@ class GroupHeader(ListItem):
 
 
 class HostItem(ListItem):
-    """A list item wrapping a Host."""
+    """A list item wrapping a Host, with a DNS-status indicator."""
 
     def __init__(self, host: Host) -> None:
         super().__init__()
         self.host = host
 
     def compose(self) -> ComposeResult:
-        yield Label(self.host.nickname)
+        with Horizontal():
+            yield Label(" ~", classes="host-status")
+            yield Label(self.host.nickname, classes="host-name")
+
+    def set_status(self, ip: Optional[str]) -> None:
+        """Update the DNS indicator.  ip=non-empty → resolved; None/empty → failed."""
+        label = self.query_one(".host-status", Label)
+        if ip:
+            label.update("[green] ●[/green]")
+        else:
+            label.update("[red] ●[/red]")
 
 
 # ---------------------------------------------------------------------------
@@ -453,7 +511,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #detail-container {
-        height: 60%;
+        height: 55%;
         border: solid $accent;
         padding: 1 2;
     }
@@ -463,7 +521,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #kerberos-container {
-        height: 40%;
+        height: 28%;
         border: solid $secondary;
         padding: 0 1;
     }
@@ -477,6 +535,36 @@ class SSHSelector(App[AppResult]):
     KerberosPanel {
         height: 1fr;
         overflow-y: auto;
+    }
+
+    #network-container {
+        height: 17%;
+        border: solid $primary-darken-2;
+        padding: 0 1;
+    }
+
+    #network-title {
+        color: $primary-darken-2;
+        text-style: bold;
+        padding: 0 0 1 0;
+    }
+
+    NetworkInfoPanel {
+        height: 1fr;
+    }
+
+    HostItem > Horizontal {
+        height: 1;
+    }
+
+    .host-status {
+        width: 3;
+        min-width: 3;
+        color: $text-muted;
+    }
+
+    .host-name {
+        width: 1fr;
     }
 
     ListView {
@@ -525,6 +613,8 @@ class SSHSelector(App[AppResult]):
         self.filtered_hosts: list[Host] = list(config.hosts)
         self._selected_host: Optional[Host] = config.hosts[0] if config.hosts else None
         self._startup_error = error
+        # hostname → resolved IP (None = lookup failed, key absent = not yet checked)
+        self._host_ips: dict[str, Optional[str]] = {}
 
     # ------------------------------------------------------------------
     # Layout
@@ -543,6 +633,9 @@ class SSHSelector(App[AppResult]):
                 with Container(id="kerberos-container"):
                     yield Label("Kerberos Tickets", id="kerberos-title")
                     yield KerberosPanel()
+                with Container(id="network-container"):
+                    yield Label("Network", id="network-title")
+                    yield NetworkInfoPanel()
         yield Footer()
 
     def on_mount(self) -> None:
@@ -550,6 +643,7 @@ class SSHSelector(App[AppResult]):
         self.query_one("#list").focus()
         if self._startup_error:
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
+        self.run_worker(self._resolve_all_hosts(), exclusive=False)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -593,8 +687,32 @@ class SSHSelector(App[AppResult]):
         lv.clear()
         for item in self._build_list_items(self.filtered_hosts):
             lv.append(item)
+        # Re-apply any already-cached DNS status to freshly created items
+        for item in lv.query(HostItem):
+            if item.host.hostname in self._host_ips:
+                item.set_status(self._host_ips[item.host.hostname])
         self._selected_host = self.filtered_hosts[0] if self.filtered_hosts else None
         self._update_detail(self._selected_host)
+
+    async def _resolve_all_hosts(self) -> None:
+        """Resolve every host's DNS concurrently and update status indicators."""
+        loop = asyncio.get_event_loop()
+
+        async def _one(host: Host) -> None:
+            try:
+                ip: Optional[str] = await loop.run_in_executor(
+                    None, socket.gethostbyname, host.hostname
+                )
+            except Exception:
+                ip = None
+            self._host_ips[host.hostname] = ip
+            for item in self.query(HostItem):
+                if item.host.hostname == host.hostname:
+                    item.set_status(ip)
+            if self._selected_host and self._selected_host.hostname == host.hostname:
+                self._update_detail(self._selected_host)
+
+        await asyncio.gather(*(_one(h) for h in self.all_hosts))
 
     def _update_detail(self, host: Optional[Host]) -> None:
         panel = self.query_one("#detail-content", Static)
@@ -604,6 +722,12 @@ class SSHSelector(App[AppResult]):
 
         port_str = f"{host.port}" if host.port != 22 else "22 (default)"
         proxy_str = host.proxy_jump if host.proxy_jump else "[dim]none[/dim]"
+        if host.hostname not in self._host_ips:
+            ip_str = "[dim]resolving…[/dim]"
+        elif self._host_ips[host.hostname]:
+            ip_str = self._host_ips[host.hostname]
+        else:
+            ip_str = "[red]not resolvable[/red]"
 
         # Show users list; mark first as default
         user_lines = []
@@ -620,6 +744,7 @@ class SSHSelector(App[AppResult]):
         panel.update(
             f"[bold white]{host.nickname}[/bold white]\n\n"
             f"[dim]Hostname   :[/dim]  {host.hostname}\n"
+            f"[dim]IP         :[/dim]  {ip_str}\n"
             f"[dim]Port       :[/dim]  {port_str}\n"
             f"[dim]Proxy jump :[/dim]  {proxy_str}\n\n"
             f"[dim]Users:[/dim]\n{users_str}\n\n"
