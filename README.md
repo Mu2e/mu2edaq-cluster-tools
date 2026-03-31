@@ -1,5 +1,7 @@
 # mu2edaq-cluster-tools
 
+![SSH Selector screenshot](screenshot.png)
+
 A terminal-based SSH host selector for managing connections to a fleet of remote hosts. Built with [Textual](https://github.com/Textualize/textual) for a keyboard-driven TUI experience.
 
 ## Features
