@@ -33,21 +33,39 @@ What does it do?
 - **Error Displays** — if a connection fails, the stderr output is displayed so you can debug it
 - **Multiple config files** — auto-discovers `*.yaml` files in `./` and `./config/`; shows a picker when more than one is found
 
-## Requirements
+## Installation
 
-This runs on most platforms (osx, linux, windows) as long as you have:
+Clone the repo and run the install script:
 
-- Python 3.10+
-- [Textual](https://github.com/Textualize/textual) >= 0.47.0
-- [PyYAML](https://pyyaml.org/) >= 6.0
+```bash
+git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
+cd mu2edaq-cluster-tools
+./install.sh
+```
 
-Install dependencies:
+This will:
+- Copy the application to `~/.local/share/mu2edaq-cluster-tools/`
+- Create a self-contained virtual environment there with all dependencies
+- Install a `ssh-selector` launcher in `~/.local/bin/` (or `~/bin/` if that exists)
+
+If `~/.local/bin` is not yet on your `PATH`, the script will tell you what to add to your shell config.
+
+To uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
+### Manual installation
+
+If you prefer to manage the environment yourself, Python 3.10+ is required along with the packages listed in `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
+python ssh_selector.py
 ```
 
-However the kerberos support on windows is sketchy.  It works within WSL, and will work from powershell if you have kerberos configured right, but MIT Kerberos for windows and various termial programs for windows won't work with it.
+Kerberos support on Windows is limited — it works within WSL and from PowerShell if Kerberos is configured, but MIT Kerberos for Windows has compatibility issues with some terminal emulators.
 
 ## Usage
 
