@@ -1,0 +1,276 @@
+# SSH Host Selector — Mu2e host configuration
+#
+# grouplist   — ordered list of group names for display
+# groups      — per-group defaults (users, proxy_jump); host entries override
+# hosts       — individual host entries; omit users/proxy_jump to inherit group defaults
+#
+# Host fields:
+#   hostname    — required; address SSH connects to
+#   nickname    — display name (defaults to hostname)
+#   group       — must match a grouplist entry
+#   port        — SSH port (default 22)
+#   users       — overrides group users list; first entry is default login
+#   proxy_jump  — overrides group proxy_jump; set to null to disable for a host
+#
+# The special user value "default" resolves to the current OS user.
+
+grouplist:
+  - Gateways
+  - DAQ Control
+  - Timing Controls
+  - DCS
+  - Tracker
+  - Calorimeter
+  - Cosmic Ray Veto
+  - Stopping Target Monitor
+  - Test Stand
+
+groups:
+  Gateways:
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+    # no proxy_jump — gateways are directly reachable
+
+  DAQ Control:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  Timing Controls:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  DCS:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - mu2edcs
+      - mu2eshift
+      - mu2ecalo
+      - mu2edaq
+      - mu2etrk
+
+  Tracker:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - mu2etrk
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2edaq
+
+  Calorimeter:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - mu2ecalo
+      - mu2eshift
+      - mu2edcs
+      - mu2edaq
+      - mu2etrk
+
+  Cosmic Ray Veto:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  Test Stand:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+hosts:
+
+  # ── Gateways ──────────────────────────────────────────────────────────────
+
+  - nickname: "Gateway 01"
+    hostname: mu2egateway01.fnal.gov
+    group: Gateways
+
+  - nickname: "Gateway 02"
+    hostname: mu2egateway02.fnal.gov
+    group: Gateways
+
+  - nickname: "Gateway 03"
+    hostname: mu2egateway03.fnal.gov
+    group: Gateways
+
+  # ── DAQ Control ───────────────────────────────────────────────────────────
+
+  - nickname: "Build Node"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: DAQ Control
+
+  - nickname: "Data Logger 01"
+    hostname: mu2e-dl-01.fnal.gov
+    group: DAQ Control
+    proxy_jump: null          # directly reachable; overrides group proxy_jump
+
+  - nickname: "Data Logger 02"
+    hostname: mu2e-dl-02.fnal.gov
+    group: DAQ Control
+
+  # ── Timing Controls ────────────────────────────────────────────────────────
+
+  - nickname: "Timing Controls 01 (CFO)"
+    hostname: mu2e-cfo-01.fnal.gov
+    group: Timing Controls
+
+  - nickname: "Timing Controls 02 (CFO)"
+    hostname: mu2e-cfo-02.fnal.gov
+    group: Timing Controls  
+
+  # ── DCS ───────────────────────────────────────────────────────────────────
+
+  - nickname: "Detector Control System 01"
+    hostname: mu2e-dcs-01.fnal.gov
+    group: DCS
+
+  - nickname: "Detector Control System 02"
+    hostname: mu2e-dcs-02.fnal.gov
+    group: DCS
+
+  # ── Tracker ───────────────────────────────────────────────────────────────
+
+  - nickname: "Tracker 01"
+    hostname: mu2e-trk-01.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 02"
+    hostname: mu2e-trk-02.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 03"
+    hostname: mu2e-trk-03.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 04"
+    hostname: mu2e-trk-04.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 05"
+    hostname: mu2e-trk-05.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 06"
+    hostname: mu2e-trk-06.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 07"
+    hostname: mu2e-trk-07.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 08"
+    hostname: mu2e-trk-08.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 09"
+    hostname: mu2e-trk-09.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 10"
+    hostname: mu2e-trk-10.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 11"
+    hostname: mu2e-trk-11.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 12"
+    hostname: mu2e-trk-12.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 13"
+    hostname: mu2e-trk-13.fnal.gov
+    group: Tracker
+
+  - nickname: "Tracker 14"
+    hostname: mu2e-trk-14.fnal.gov
+    group: Tracker
+
+  # ── Calorimeter ───────────────────────────────────────────────────────────
+
+  - nickname: "Calorimeter 01"
+    hostname: mu2e-calo-01.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 02"
+    hostname: mu2e-calo-02.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 03"
+    hostname: mu2e-calo-03.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 04"
+    hostname: mu2e-calo-04.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 05"
+    hostname: mu2e-calo-05.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 06"
+    hostname: mu2e-calo-06.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 07"
+    hostname: mu2e-calo-07.fnal.gov
+    group: Calorimeter
+
+  - nickname: "Calorimeter 08"
+    hostname: mu2e-calo-08.fnal.gov
+    group: Calorimeter
+    # ── Cosmic Ray Veto ───────────────────────────────────────────────────────
+
+  - nickname: "Cosmic Ray Veto 01"
+    hostname: mu2e-crv-01.fnal.gov
+    group: Cosmic Ray Veto
+
+  - nickname: "Cosmic Ray Veto 02"
+    hostname: mu2e-crv-02.fnal.gov
+    group: Cosmic Ray Veto
+
+  - nickname: "Cosmic Ray Veto 03"
+    hostname: mu2e-crv-03.fnal.gov
+    group: Cosmic Ray Veto
+
+    # ── Stopping Target Monitor ────────────────────────────────────────────────
+
+  - nickname: "Stopping Target Monitor 01"
+    hostname: mu2e-stm-01.fnal.gov
+    group: Stopping Target Monitor
+
+  - nickname: "Stopping Target Monitor 02"
+    hostname: mu2e-stm-02.fnal.gov
+    group: Stopping Target Monitor
+
+    # --- Test Stand ─────────────────────────────────────────────────────────────
+  - nickname: "DAQ-13"
+    hostname: mu2edaq13.fnal.gov
+    group: Test Stand
+  
