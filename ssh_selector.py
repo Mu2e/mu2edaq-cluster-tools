@@ -11,6 +11,7 @@ import sys
 import subprocess
 import argparse
 import getpass
+import shlex
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1001,6 +1002,7 @@ class SSHSelector(App[AppResult]):
 
     BINDINGS = [
         Binding("enter", "connect", "Connect", show=True),
+        Binding("n", "new_terminal", "New Terminal"),
         Binding("t", "tunnel", "Tunnel"),
         Binding("c", "check_users", "Check Users"),
         Binding("C", "check_users", show=False),
@@ -1235,6 +1237,22 @@ class SSHSelector(App[AppResult]):
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
+    def _choose_new_terminal(self, host: Host) -> None:
+        """Exit with a new_terminal ConnectionRequest, showing user modal only when needed."""
+        skip_proxy = self._should_skip_proxy(host)
+        if len(host.users) == 1:
+            self.exit(ConnectionRequest(
+                host=host, user=host.users[0], skip_proxy=skip_proxy, mode="new_terminal"
+            ))
+        else:
+            def on_user_chosen(user: Optional[str]) -> None:
+                if user is not None:
+                    self.exit(ConnectionRequest(
+                        host=host, user=user, skip_proxy=skip_proxy, mode="new_terminal"
+                    ))
+
+            self.push_screen(UserSelectModal(host), on_user_chosen)
+
     def _choose_tunnel(self, host: Host) -> None:
         """Start tunnel flow: pick user (if needed), then prompt for port numbers."""
         skip_proxy = self._should_skip_proxy(host)
@@ -1366,6 +1384,10 @@ class SSHSelector(App[AppResult]):
     def action_connect(self) -> None:
         if self._selected_host:
             self._choose_and_exit(self._selected_host)
+
+    def action_new_terminal(self) -> None:
+        if self._selected_host:
+            self._choose_new_terminal(self._selected_host)
 
     def action_tunnel(self) -> None:
         if self._selected_host:
@@ -1542,6 +1564,34 @@ class ConfigSelectApp(App[Optional[Path]]):
 # Entry point
 # ---------------------------------------------------------------------------
 
+def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
+    """Launch *cmd* in a new terminal window, returning immediately."""
+    if sys.platform == "darwin":
+        ssh_str = " ".join(shlex.quote(c) for c in cmd)
+        # AppleScript requires double-quoted strings; escape any embedded double quotes.
+        ssh_str_escaped = ssh_str.replace("\\", "\\\\").replace('"', '\\"')
+        script = f'tell application "Terminal" to do script "{ssh_str_escaped}"'
+        subprocess.Popen(["osascript", "-e", script])
+        return
+
+    # Linux: try common terminal emulators in preference order.
+    candidates = [
+        ["gnome-terminal", "--"],
+        ["xfce4-terminal", "-e"],
+        ["konsole", "-e"],
+        ["xterm", "-e"],
+    ]
+    for prefix in candidates:
+        exe = prefix[0]
+        if subprocess.run(["which", exe], capture_output=True).returncode == 0:
+            subprocess.Popen(prefix + cmd)
+            return
+
+    print(f"Warning: no supported terminal emulator found. Run manually:\n  {' '.join(cmd)}")
+
+
+# ---------------------------------------------------------------------------
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="SSH Host Selector — pick a host from a YAML list and connect.",
@@ -1603,7 +1653,11 @@ Config file search order (when -c is not given):
         if skip_proxy and host.proxy_jump:
             print(f"Note: proxy jump skipped (same subnet as {host.proxy_jump})")
 
-        if result.mode == "tunnel":
+        if result.mode == "new_terminal":
+            cmd = host.ssh_command(user_entry, skip_proxy=skip_proxy)
+            _open_in_new_terminal(cmd, host.nickname)
+            ssh_error = ""
+        elif result.mode == "tunnel":
             cmd = host.tunnel_command(
                 user_entry, result.local_port, result.remote_port, skip_proxy=skip_proxy
             )
