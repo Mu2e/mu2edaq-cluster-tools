@@ -466,6 +466,58 @@ class UserSelectModal(ModalScreen[Optional[str]]):
 # SSH error modal
 # ---------------------------------------------------------------------------
 
+class AboutModal(ModalScreen):
+    """Modal overlay showing application info and author contact details."""
+
+    CSS = """
+    AboutModal {
+        align: center middle;
+    }
+
+    #about-container {
+        width: 60;
+        height: auto;
+        border: thick $accent;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #about-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+
+    #about-body {
+        margin-bottom: 1;
+    }
+
+    #about-hint {
+        color: $text-muted;
+        text-style: italic;
+    }
+    """
+
+    BINDINGS = [Binding("escape", "dismiss", show=False)]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="about-container"):
+            yield Label("mu2edaq-cluster-tools", id="about-title")
+            yield Static(
+                "A keyboard-driven interface for managing SSH connections\n"
+                "to Fermilab DAQ and Offline Clusters.\n\n"
+                "[dim]Author  :[/dim]  Andrew J. Norman\n"
+                "[dim]Email   :[/dim]  anorman@fnal.gov\n"
+                "[dim]Repo    :[/dim]  github.com/Mu2e/mu2edaq-cluster-tools\n"
+                "[dim]License :[/dim]  MIT\n",
+                id="about-body",
+            )
+            yield Label("Press any key to close", id="about-hint")
+
+    def on_key(self) -> None:
+        self.dismiss()
+
+
 class SSHErrorModal(ModalScreen):
     """Modal that displays an SSH connection error and dismisses on any key."""
 
@@ -818,6 +870,7 @@ class SSHSelector(App[AppResult]):
         Binding("C", "check_users", show=False),
         Binding("/", "focus_search", "Search"),
         Binding("r", "renew_kerberos", "Renew Kerberos"),
+        Binding("A", "about", "About"),
         Binding("q", "quit", "Quit"),
         Binding("escape", "escape_search", "Back to list", show=False),
     ]
@@ -1132,6 +1185,9 @@ class SSHSelector(App[AppResult]):
     def action_tunnel(self) -> None:
         if self._selected_host:
             self._choose_tunnel(self._selected_host)
+
+    def action_about(self) -> None:
+        self.push_screen(AboutModal())
 
     def action_check_users(self) -> None:
         self.run_worker(self._check_all_user_counts(), exclusive=False)
