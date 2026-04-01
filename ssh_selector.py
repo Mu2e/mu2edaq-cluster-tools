@@ -11,6 +11,7 @@ import sys
 import subprocess
 import argparse
 import getpass
+import time
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,16 @@ def resolve_user(user: str) -> str:
 def display_user(user: str) -> str:
     """Human-readable label for a user entry."""
     return f"{CURRENT_USER} (default)" if user == "default" else user
+
+
+def _format_age(secs: float) -> str:
+    """Return a compact human-readable age string (e.g. '4m', '1h 23m')."""
+    s = int(secs)
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m"
+    return f"{s // 3600}h {(s % 3600) // 60:02d}m"
 
 
 @dataclass
@@ -96,6 +107,7 @@ class Config:
     hosts: list[Host]
     grouplist: list[str]          # ordered group names; controls display order
     groups: dict[str, GroupConfig] = field(default_factory=dict)
+    cache_lifetime: int = 600     # seconds before a user-count result is re-fetched
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +167,8 @@ def load_config(config_path: Path) -> Config:
             group=group_name,
         ))
 
-    return Config(hosts=hosts, grouplist=grouplist, groups=groups)
+    cache_lifetime = int(data.get("cache_lifetime", 600))
+    return Config(hosts=hosts, grouplist=grouplist, groups=groups, cache_lifetime=cache_lifetime)
 
 
 # ---------------------------------------------------------------------------
@@ -632,6 +645,14 @@ class HostPairItem(ListItem):
                 dot = "[green] ●[/green]" if ip else "[red] ●[/red]"
                 self.query_one(f".host-status-{i}", Label).update(dot)
 
+    def set_user_count(self, hostname: str, count: Optional[int]) -> None:
+        """Update the logged-in user count shown next to the nickname."""
+        for i, host in enumerate(self.hosts):
+            if host.hostname == hostname:
+                label = self.query_one(f".col-{i} .host-name", Label)
+                text = host.nickname if count is None else f"{host.nickname} ({count})"
+                label.update(text)
+
 
 # ---------------------------------------------------------------------------
 # Main TUI application
@@ -793,6 +814,8 @@ class SSHSelector(App[AppResult]):
     BINDINGS = [
         Binding("enter", "connect", "Connect", show=True),
         Binding("t", "tunnel", "Tunnel"),
+        Binding("c", "check_users", "Check Users"),
+        Binding("C", "check_users", show=False),
         Binding("/", "focus_search", "Search"),
         Binding("r", "renew_kerberos", "Renew Kerberos"),
         Binding("q", "quit", "Quit"),
@@ -810,6 +833,9 @@ class SSHSelector(App[AppResult]):
         # hostname → resolved IP (None = lookup failed, key absent = not yet checked)
         self._host_ips: dict[str, Optional[str]] = {}
         self._local_networks: list[ipaddress.IPv4Network] = []
+        self._cache_lifetime: int = config.cache_lifetime
+        # hostname → (count, monotonic timestamp); key absent = never fetched
+        self._user_counts: dict[str, tuple[Optional[int], float]] = {}
 
     # ------------------------------------------------------------------
     # Layout
@@ -891,11 +917,14 @@ class SSHSelector(App[AppResult]):
         lv.clear()
         for item in self._build_list_items(self.filtered_hosts):
             lv.append(item)
-        # Re-apply any already-cached DNS status to freshly created items
+        # Re-apply any already-cached DNS and user-count status to freshly created items
         for item in lv.query(HostPairItem):
             for host in item.hosts:
                 if host.hostname in self._host_ips:
                     item.set_status(host.hostname, self._host_ips[host.hostname])
+                if host.hostname in self._user_counts:
+                    count, _ = self._user_counts[host.hostname]
+                    item.set_user_count(host.hostname, count)
         self._column = 0
         self._selected_host = self.filtered_hosts[0] if self.filtered_hosts else None
         self._update_detail(self._selected_host)
@@ -967,6 +996,21 @@ class SSHSelector(App[AppResult]):
             user_lines.append(f"  {label}")
         users_str = "\n".join(user_lines)
 
+        # Logged-in user count
+        if host.hostname not in self._user_counts:
+            logged_in_str = "[dim]press c to check[/dim]"
+        else:
+            count, fetched_at = self._user_counts[host.hostname]
+            age = time.monotonic() - fetched_at
+            expired = age >= self._cache_lifetime
+            stale_tag = " [dim](stale)[/dim]" if expired else ""
+            age_tag = f" [dim]({_format_age(age)} ago)[/dim]"
+            if count is None:
+                logged_in_str = f"[dim]unreachable[/dim]{age_tag}{stale_tag}"
+            else:
+                color = "green" if count == 0 else "yellow"
+                logged_in_str = f"[{color}]{count}[/{color}]{age_tag}{stale_tag}"
+
         # Preview command using the default (first) user
         cmd_str = " ".join(host.ssh_command(host.users[0]))
 
@@ -975,7 +1019,8 @@ class SSHSelector(App[AppResult]):
             f"[dim]Hostname   :[/dim]  {host.hostname}\n"
             f"[dim]IP         :[/dim]  {ip_str}\n"
             f"[dim]Port       :[/dim]  {port_str}\n"
-            f"[dim]Proxy jump :[/dim]  {proxy_str}\n\n"
+            f"[dim]Proxy jump :[/dim]  {proxy_str}\n"
+            f"[dim]Logged in  :[/dim]  {logged_in_str}\n\n"
             f"[dim]Users:[/dim]\n{users_str}\n\n"
             f"[dim]Command (default user):[/dim]\n"
             f"  [italic]{cmd_str}[/italic]\n\n"
@@ -1087,6 +1132,51 @@ class SSHSelector(App[AppResult]):
     def action_tunnel(self) -> None:
         if self._selected_host:
             self._choose_tunnel(self._selected_host)
+
+    def action_check_users(self) -> None:
+        self.run_worker(self._check_all_user_counts(), exclusive=False)
+
+    async def _check_all_user_counts(self) -> None:
+        """SSH into every host concurrently and count logged-in users via `who`."""
+        await asyncio.gather(*[self._check_user_count_one(h) for h in self.all_hosts])
+
+    def _user_count_is_fresh(self, hostname: str) -> bool:
+        """Return True if a cached count exists and has not yet expired."""
+        if hostname not in self._user_counts:
+            return False
+        _, fetched_at = self._user_counts[hostname]
+        return (time.monotonic() - fetched_at) < self._cache_lifetime
+
+    async def _check_user_count_one(self, host: Host) -> None:
+        if self._user_count_is_fresh(host.hostname):
+            return  # cached result still valid — nothing to do
+        skip_proxy = self._should_skip_proxy(host)
+        base = host.ssh_command(host.users[0], skip_proxy=skip_proxy)
+        # Insert non-interactive options right after 'ssh'
+        cmd = (
+            base[:1]
+            + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
+            + base[1:]
+            + ["who"]
+        )
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=12)
+            lines = [l for l in stdout.decode().splitlines() if l.strip()]
+            count: Optional[int] = len(lines)
+        except Exception:
+            count = None
+        self._user_counts[host.hostname] = (count, time.monotonic())
+        # Update every list item that contains this host
+        for item in self.query(HostPairItem):
+            item.set_user_count(host.hostname, count)
+        # Refresh the detail panel if this host is selected
+        if self._selected_host and self._selected_host.hostname == host.hostname:
+            self._update_detail(self._selected_host)
 
     def action_renew_kerberos(self) -> None:
         self.run_worker(self._do_renew_kerberos(), exclusive=True)

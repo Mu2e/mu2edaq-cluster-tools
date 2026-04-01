@@ -1,8 +1,9 @@
 # SSH Host Selector — example configuration
 #
-# grouplist   — ordered list of group names for display
-# groups      — per-group defaults applied to every host in that group
-# hosts       — individual host entries
+# cache_lifetime — seconds a user-count result is reused before re-fetching (default 600)
+# grouplist      — ordered list of group names for display
+# groups         — per-group defaults applied to every host in that group
+# hosts          — individual host entries
 #
 # Per-group defaults (under `groups`):
 #   users       — default user list for all hosts in the group
@@ -18,6 +19,8 @@
 #   user        — legacy scalar form; equivalent to  users: [value]
 #
 # The special user value "default" resolves to the current OS user at runtime.
+
+cache_lifetime: 600   # seconds; set lower (e.g. 60) for a busy cluster
 
 grouplist:
   - Access
