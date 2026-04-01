@@ -167,4 +167,4 @@ Press `r` to renew the ticket principal via `kinit -R`. Tickets refresh automati
 
 ## Other Stuff
 
-Need more features?  Sure let me know.
+Need more features?  Sure let me know. -AJN
