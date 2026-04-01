@@ -21,6 +21,7 @@
 # The special user value "default" resolves to the current OS user at runtime.
 
 cache_lifetime: 600   # seconds; set lower (e.g. 60) for a busy cluster
+panel_width: 50       # fixed column width of the right-hand info/kerberos/network panels
 
 grouplist:
   - Access

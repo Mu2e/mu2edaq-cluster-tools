@@ -108,6 +108,7 @@ class Config:
     grouplist: list[str]          # ordered group names; controls display order
     groups: dict[str, GroupConfig] = field(default_factory=dict)
     cache_lifetime: int = 600     # seconds before a user-count result is re-fetched
+    panel_width: int = 50         # fixed column width of the right-hand info panel
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +169,14 @@ def load_config(config_path: Path) -> Config:
         ))
 
     cache_lifetime = int(data.get("cache_lifetime", 600))
-    return Config(hosts=hosts, grouplist=grouplist, groups=groups, cache_lifetime=cache_lifetime)
+    panel_width = int(data.get("panel_width", 50))
+    return Config(
+        hosts=hosts,
+        grouplist=grouplist,
+        groups=groups,
+        cache_lifetime=cache_lifetime,
+        panel_width=panel_width,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -744,7 +752,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #host-list-container {
-        width: 35%;
+        width: 1fr;
         min-width: 24;
         border: solid $primary;
         padding: 0 1;
@@ -757,7 +765,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #right-panel {
-        width: 65%;
+        width: 50;
     }
 
     #detail-container {
@@ -887,6 +895,7 @@ class SSHSelector(App[AppResult]):
         self._host_ips: dict[str, Optional[str]] = {}
         self._local_networks: list[ipaddress.IPv4Network] = []
         self._cache_lifetime: int = config.cache_lifetime
+        self._panel_width: int = config.panel_width
         # hostname → (count, monotonic timestamp); key absent = never fetched
         self._user_counts: dict[str, tuple[Optional[int], float]] = {}
 
@@ -913,6 +922,7 @@ class SSHSelector(App[AppResult]):
         yield Footer()
 
     def on_mount(self) -> None:
+        self.query_one("#right-panel").styles.width = self._panel_width
         self._update_detail(self._selected_host)
         self.query_one("#list").focus()
         if self._startup_error:
