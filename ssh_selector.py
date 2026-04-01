@@ -649,7 +649,7 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int, bool]]]):
             yield Label("", id="tunnel-error")
             with Horizontal(id="tunnel-bg-row"):
                 yield Label("Run in background:", id="tunnel-bg-label")
-                yield Switch(value=False, id="tunnel-bg-switch")
+                yield Switch(value=True, id="tunnel-bg-switch")
             yield Label(
                 "Tab between fields and toggle · Enter on port field to advance · Enter confirms",
                 id="tunnel-hint",
