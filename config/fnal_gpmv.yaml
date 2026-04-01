@@ -14,6 +14,8 @@
 #
 # The special user value "default" resolves to the current OS user.
 
+cache_lifetime: 600   # seconds; set lower (e.g. 60) for a busy cluster
+
 grouplist:
   - Mu2e GPVMs
   - NOvA GPVMs
