@@ -22,10 +22,11 @@ from rich.markup import escape as markup_escape
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widget import Widget
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
-from textual import on
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static, Switch
+from textual import events, on
 
 
 # ---------------------------------------------------------------------------
@@ -579,8 +580,8 @@ class SSHErrorModal(ModalScreen):
 # Tunnel port modal
 # ---------------------------------------------------------------------------
 
-class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
-    """Modal overlay for entering local and remote port numbers for an SSH tunnel."""
+class TunnelPortModal(ModalScreen[Optional[tuple[int, int, bool]]]):
+    """Modal overlay for entering local/remote ports and foreground/background mode."""
 
     CSS = """
     TunnelPortModal {
@@ -588,7 +589,7 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
     }
 
     #tunnel-container {
-        width: 54;
+        width: 58;
         height: auto;
         border: thick $accent;
         background: $surface;
@@ -604,6 +605,18 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
     .tunnel-label {
         margin-top: 1;
         color: $text-muted;
+    }
+
+    #tunnel-bg-row {
+        height: 3;
+        margin-top: 1;
+        align: left middle;
+    }
+
+    #tunnel-bg-label {
+        width: auto;
+        color: $text-muted;
+        margin-right: 1;
     }
 
     #tunnel-hint {
@@ -634,13 +647,22 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
             yield Label("Remote port (on destination):", classes="tunnel-label")
             yield Input(placeholder="e.g. 8080", id="remote-port")
             yield Label("", id="tunnel-error")
+            with Horizontal(id="tunnel-bg-row"):
+                yield Label("Run in background:", id="tunnel-bg-label")
+                yield Switch(value=False, id="tunnel-bg-switch")
             yield Label(
-                "Tab / Enter to move between fields  ·  Enter on second field to confirm",
+                "Tab between fields and toggle · Enter on port field to advance · Enter confirms",
                 id="tunnel-hint",
             )
 
     def on_mount(self) -> None:
         self.query_one("#local-port", Input).focus()
+
+    def on_key(self, event: events.Key) -> None:
+        if event.key == "enter" and isinstance(self.focused, Switch):
+            event.prevent_default()
+            event.stop()
+            self._try_submit()
 
     @on(Input.Submitted, "#local-port")
     def _local_submitted(self) -> None:
@@ -661,7 +683,8 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int]]]):
                 raise ValueError(f"Local port {local_port} out of range 1–65535")
             if not (1 <= remote_port <= 65535):
                 raise ValueError(f"Remote port {remote_port} out of range 1–65535")
-            self.dismiss((local_port, remote_port))
+            background = self.query_one("#tunnel-bg-switch", Switch).value
+            self.dismiss((local_port, remote_port, background))
         except ValueError as exc:
             error_label.update(str(exc) if str(exc) else "Please enter valid port numbers.")
 
@@ -715,19 +738,100 @@ class HostPairItem(ListItem):
 
 
 # ---------------------------------------------------------------------------
-# Main TUI application
+# Connection result types
 # ---------------------------------------------------------------------------
 
 @dataclass
 class ConnectionRequest:
     """Describes the connection the user wants to make."""
-    host: Host
+    host: "Host"
     user: str
     skip_proxy: bool
     mode: str = "shell"       # "shell" or "tunnel"
     local_port: int = 0
     remote_port: int = 0
 
+
+@dataclass
+class ActiveTunnel:
+    """A background SSH port-forward tunnel managed by the application."""
+    host: "Host"
+    user: str
+    local_port: int
+    remote_port: int
+    process: "subprocess.Popen[bytes]"
+    started_at: float   # time.monotonic()
+
+    @property
+    def is_alive(self) -> bool:
+        return self.process.poll() is None
+
+    @property
+    def pid(self) -> int:
+        return self.process.pid
+
+
+# ---------------------------------------------------------------------------
+# Active tunnel list items and panel
+# ---------------------------------------------------------------------------
+
+class TunnelItem(ListItem):
+    """A list item representing one active background tunnel."""
+
+    def __init__(self, tunnel: ActiveTunnel) -> None:
+        super().__init__()
+        self.tunnel = tunnel
+
+    def compose(self) -> ComposeResult:
+        dot = "[green] ●[/green]" if self.tunnel.is_alive else "[red] ●[/red]"
+        age = _format_age(time.monotonic() - self.tunnel.started_at)
+        user = resolve_user(self.tunnel.user)
+        yield Label(
+            f"{dot} :{self.tunnel.local_port} → "
+            f"{self.tunnel.host.nickname}:{self.tunnel.remote_port}  "
+            f"[dim]{user}  {age}  pid {self.tunnel.pid}[/dim]",
+            classes="tunnel-item-label",
+        )
+
+
+class TunnelPanel(Widget):
+    """Widget listing active background tunnels; supports kill via k / Delete."""
+
+    class KillRequested(Message):
+        """Posted when the user wants to terminate a tunnel."""
+        def __init__(self, tunnel: ActiveTunnel) -> None:
+            super().__init__()
+            self.tunnel = tunnel
+
+    BINDINGS = [
+        Binding("k", "kill_selected", "Kill", show=True),
+        Binding("delete", "kill_selected", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield ListView(id="tunnel-list")
+
+    def on_mount(self) -> None:
+        self.refresh_tunnels([])
+
+    def refresh_tunnels(self, tunnels: list[ActiveTunnel]) -> None:
+        lv = self.query_one("#tunnel-list", ListView)
+        lv.clear()
+        if not tunnels:
+            lv.append(ListItem(Label("[dim]No active tunnels[/dim]")))
+        else:
+            for t in tunnels:
+                lv.append(TunnelItem(t))
+
+    def action_kill_selected(self) -> None:
+        lv = self.query_one("#tunnel-list", ListView)
+        if isinstance(lv.highlighted_child, TunnelItem):
+            self.post_message(self.KillRequested(lv.highlighted_child.tunnel))
+
+
+# ---------------------------------------------------------------------------
+# Main TUI application
+# ---------------------------------------------------------------------------
 
 # App result: a ConnectionRequest, or None if the user quit.
 AppResult = Optional[ConnectionRequest]
@@ -769,7 +873,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #detail-container {
-        height: 55%;
+        height: 40%;
         border: solid $accent;
         padding: 1 2;
     }
@@ -779,7 +883,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #kerberos-container {
-        height: 28%;
+        height: 22%;
         border: solid $secondary;
         padding: 0 1;
     }
@@ -796,7 +900,7 @@ class SSHSelector(App[AppResult]):
     }
 
     #network-container {
-        height: 17%;
+        height: 12%;
         border: solid $primary-darken-2;
         padding: 0 1;
     }
@@ -809,6 +913,30 @@ class SSHSelector(App[AppResult]):
 
     NetworkInfoPanel {
         height: 1fr;
+    }
+
+    #tunnels-container {
+        height: 26%;
+        border: solid $warning-darken-2;
+        padding: 0 1;
+    }
+
+    #tunnels-title {
+        color: $warning;
+        text-style: bold;
+        padding: 0 0 1 0;
+    }
+
+    TunnelPanel {
+        height: 1fr;
+    }
+
+    TunnelPanel ListView {
+        height: 1fr;
+    }
+
+    .tunnel-item-label {
+        width: 1fr;
     }
 
     HostPairItem > Horizontal {
@@ -898,6 +1026,7 @@ class SSHSelector(App[AppResult]):
         self._panel_width: int = config.panel_width
         # hostname → (count, monotonic timestamp); key absent = never fetched
         self._user_counts: dict[str, tuple[Optional[int], float]] = {}
+        self._active_tunnels: list[ActiveTunnel] = []
 
     # ------------------------------------------------------------------
     # Layout
@@ -919,6 +1048,9 @@ class SSHSelector(App[AppResult]):
                 with Container(id="network-container"):
                     yield Label("Network", id="network-title")
                     yield NetworkInfoPanel()
+                with Container(id="tunnels-container"):
+                    yield Label("Tunnels", id="tunnels-title")
+                    yield TunnelPanel()
         yield Footer()
 
     def on_mount(self) -> None:
@@ -929,6 +1061,7 @@ class SSHSelector(App[AppResult]):
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
         self.run_worker(self._resolve_all_hosts(), exclusive=False)
         self.run_worker(self._load_local_networks(), exclusive=False)
+        self.set_interval(5, self._cleanup_dead_tunnels)
 
     # ------------------------------------------------------------------
     # Helpers
@@ -1107,9 +1240,13 @@ class SSHSelector(App[AppResult]):
         skip_proxy = self._should_skip_proxy(host)
 
         def show_port_modal(user: str) -> None:
-            def on_ports_chosen(ports: Optional[tuple[int, int]]) -> None:
-                if ports is not None:
-                    local_port, remote_port = ports
+            def on_ports_chosen(result: Optional[tuple[int, int, bool]]) -> None:
+                if result is None:
+                    return
+                local_port, remote_port, background = result
+                if background:
+                    self._start_background_tunnel(host, user, local_port, remote_port, skip_proxy)
+                else:
                     self.exit(ConnectionRequest(
                         host=host,
                         user=user,
@@ -1129,6 +1266,36 @@ class SSHSelector(App[AppResult]):
                     show_port_modal(user)
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
+
+    def _start_background_tunnel(
+        self, host: Host, user: str, local_port: int, remote_port: int, skip_proxy: bool
+    ) -> None:
+        """Launch an SSH tunnel as a background process and register it."""
+        cmd = host.tunnel_command(user, local_port, remote_port, skip_proxy=skip_proxy)
+        try:
+            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        except Exception as exc:
+            self.push_screen(SSHErrorModal(str(exc)))
+            return
+        self._active_tunnels.append(ActiveTunnel(
+            host=host,
+            user=user,
+            local_port=local_port,
+            remote_port=remote_port,
+            process=proc,
+            started_at=time.monotonic(),
+        ))
+        self._refresh_tunnel_panel()
+
+    def _refresh_tunnel_panel(self) -> None:
+        self.query_one(TunnelPanel).refresh_tunnels(self._active_tunnels)
+
+    def _cleanup_dead_tunnels(self) -> None:
+        """Remove any background tunnels whose SSH process has exited."""
+        before = len(self._active_tunnels)
+        self._active_tunnels = [t for t in self._active_tunnels if t.is_alive]
+        if len(self._active_tunnels) != before:
+            self._refresh_tunnel_panel()
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -1171,6 +1338,14 @@ class SSHSelector(App[AppResult]):
         self._apply_column_highlight(item)
         self._update_detail(self._selected_host)
         event.stop()
+
+    def on_tunnel_panel_kill_requested(self, event: TunnelPanel.KillRequested) -> None:
+        """Terminate a background tunnel when the user kills it from the panel."""
+        tunnel = event.tunnel
+        if tunnel.is_alive:
+            tunnel.process.terminate()
+        self._active_tunnels = [t for t in self._active_tunnels if t is not tunnel]
+        self._refresh_tunnel_panel()
 
     @on(Input.Changed, "#search-bar")
     def handle_search(self, event: Input.Changed) -> None:
