@@ -1,0 +1,194 @@
+# SSH Host Selector — Mu2e host configuration
+#
+# grouplist   — ordered list of group names for display
+# groups      — per-group defaults (users, proxy_jump); host entries override
+# hosts       — individual host entries; omit users/proxy_jump to inherit group defaults
+#
+# Host fields:
+#   hostname    — required; address SSH connects to
+#   nickname    — display name (defaults to hostname)
+#   group       — must match a grouplist entry
+#   port        — SSH port (default 22)
+#   users       — overrides group users list; first entry is default login
+#   proxy_jump  — overrides group proxy_jump; set to null to disable for a host
+#
+# The special user value "default" resolves to the current OS user.
+
+grouplist:
+  - Mu2e GPVMs
+  - NOvA GPVMs
+  - DUNE GPVMs
+  - SBND GPVMs
+  - Other GPVMs
+
+# These are the general mu2e machines (mainly gpvms) that are directly accessible to users with appropriate accounts; no proxy jumping required
+groups:
+  Mu2e GPVMs:
+    users:
+      - default
+    # no proxy_jump — gateways are directly reachable
+  NOvA GPVMs:
+    users:
+      - default
+    # no proxy_jump — gateways are directly reachable
+  DUNE GPVMs:
+    users:
+      - default
+    # no proxy_jump — gateways are directly reachable
+  SBND GPVMs:
+    users:
+      - default
+    # no proxy_jump — gateways are directly reachable
+  Other GPVMs:
+    users:
+      - default
+    # no proxy_jump — gateways are directly reachable
+
+hosts:
+
+  # ── Mu2e GPVMs ──────────────────────────────────────────────────────────────
+
+  - nickname: "Mu2e GPVM 01"
+    hostname: mu2egpvm01.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 02"
+    hostname: mu2egpvm02.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 03"
+    hostname: mu2egpvm03.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 04"
+    hostname: mu2egpvm04.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 05"
+    hostname: mu2egpvm05.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 06"
+    hostname: mu2egpvm06.fnal.gov
+    group: Mu2e GPVMs
+
+  - nickname: "Mu2e GPVM 07"
+    hostname: mu2egpvm07.fnal.gov
+    group: Mu2e GPVMs
+  
+
+  # ── NOvA GPVMs ──────────────────────────────────────────────────────────────
+
+  - nickname: "NOvA GPVM 01"
+    hostname: novagpvm01.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 02"
+    hostname: novagpvm02.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 03"
+    hostname: novagpvm03.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 04"
+    hostname: novagpvm04.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 05"
+    hostname: novagpvm05.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 06"
+    hostname: novagpvm06.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 07"
+    hostname: novagpvm07.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 08"
+    hostname: novagpvm08.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 09"
+    hostname: novagpvm09.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 10"
+    hostname: novagpvm10.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 11"
+    hostname: novagpvm11.fnal.gov
+    group: NOvA GPVMs
+
+  - nickname: "NOvA GPVM 12"
+    hostname: novagpvm12.fnal.gov
+    group: NOvA GPVMs
+
+  # ── DUNE GPVMs ──────────────────────────────────────────────────────────────
+
+  - nickname: "DUNE GPVM 01"
+    hostname: dunegpvm01.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 02"
+    hostname: dunegpvm02.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 03"
+    hostname: dunegpvm03.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 04"
+    hostname: dunegpvm04.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 05"
+    hostname: dunegpvm05.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 06"
+    hostname: dunegpvm06.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 07"
+    hostname: dunegpvm07.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 08"
+    hostname: dunegpvm08.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 09"
+    hostname: dunegpvm09.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 10"
+    hostname: dunegpvm10.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 11"
+    hostname: dunegpvm11.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 12"
+    hostname: dunegpvm12.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 13"
+    hostname: dunegpvm13.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 14"
+    hostname: dunegpvm14.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 15"
+    hostname: dunegpvm15.fnal.gov
+    group: DUNE GPVMs
+
+  - nickname: "DUNE GPVM 16"
+    hostname: dunegpvm16.fnal.gov
+    group: DUNE GPVMs

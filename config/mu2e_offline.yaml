@@ -1,0 +1,172 @@
+# SSH Host Selector — Mu2e host configuration
+#
+# grouplist   — ordered list of group names for display
+# groups      — per-group defaults (users, proxy_jump); host entries override
+# hosts       — individual host entries; omit users/proxy_jump to inherit group defaults
+#
+# Host fields:
+#   hostname    — required; address SSH connects to
+#   nickname    — display name (defaults to hostname)
+#   group       — must match a grouplist entry
+#   port        — SSH port (default 22)
+#   users       — overrides group users list; first entry is default login
+#   proxy_jump  — overrides group proxy_jump; set to null to disable for a host
+#
+# The special user value "default" resolves to the current OS user.
+
+grouplist:
+  - General Access
+  - Nearline
+  - File Transfer
+  - Test Stand
+  - Gateways
+
+# These are the general mu2e machines (mainly gpvms) that are directly accessible to users with appropriate accounts; no proxy jumping required
+groups:
+  General Access:
+    users:
+      - default
+   # no proxy_jump — gateways are directly reachable
+
+# These are the gateway machines which are on the public network
+  Gateways:
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+    # no proxy_jump — gateways are directly reachable
+
+# Nearline machines are behind the gateway at MC-2 and require proxy jumping
+  Nearline:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  Timing Controls:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+# These are the machines used for file transfer, which are inside the DAQ cluster and require proxy jumping; the user list is ordered with the most common logins first to make them the default in the UI
+  File Transfer:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - mu2edcs
+      - mu2eshift
+      - mu2ecalo
+      - mu2edaq
+      - mu2etrk
+
+# These are the Helen Edwards test stand machines, which are behind a different gateway and require a different proxy jump
+  Test Stand:
+    proxy_jump: mu2edaq-gateway.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+hosts:
+
+  # ── Gateways ──────────────────────────────────────────────────────────────
+
+  - nickname: "Gateway 01"
+    hostname: mu2egateway01.fnal.gov
+    group: Gateways
+
+  - nickname: "Gateway 02"
+    hostname: mu2egateway02.fnal.gov
+    group: Gateways
+
+  - nickname: "Gateway 03"
+    hostname: mu2egateway03.fnal.gov
+    group: Gateways
+
+  # ── General Access ────────────────────────────────────────────────────────
+
+  - nickname: "Mu2e GPVM 01"
+    hostname: mu2egpvm01.fnal.gov
+    group: General Access
+
+  - nickname: "Mu2e GPVM 02"
+    hostname: mu2egpvm02.fnal.gov
+    group: General Access
+
+  - nickname: "Mu2e GPVM 03"
+    hostname: mu2egpvm03.fnal.gov
+    group: General Access
+
+  - nickname: "Mu2e GPVM 04"
+    hostname: mu2egpvm04.fnal.gov
+    group: General Access 
+
+  - nickname: "Mu2e GPVM 05"
+    hostname: mu2egpvm05.fnal.gov
+    group: General Access   
+  - nickname: "Mu2e GPVM 06"    
+    hostname: mu2egpvm06.fnal.gov
+    group: General Access
+
+# ── Nearline ───────────────────────────────────────────────────────────────
+  - nickname: "Nearline 01"
+    hostname: mu2e-nearline-01.fnal.gov
+    group: Nearline
+
+  - nickname: "Nearline 02"    
+    hostname: mu2e-nearline-02.fnal.gov
+    group: Nearline 
+  - nickname: "Nearline 03"   
+    hostname: mu2e-nearline-03.fnal.gov
+    group: Nearline 
+  - nickname: "Nearline 04" 
+    hostname: mu2e-nearline-04.fnal.gov
+    group: Nearline 
+
+# ── File Transfer ───────────────────────────────────────────────────────────
+  - nickname: "Data Logger 01"
+    hostname: mu2e-dl-01.fnal.gov
+    group: DAQ Control
+    proxy_jump: null          # directly reachable; overrides group proxy_jump
+
+  - nickname: "Data Logger 02"
+    hostname: mu2e-dl-02.fnal.gov
+    group: DAQ Control
+ 
+    # --- Test Stand ─────────────────────────────────────────────────────────────
+  - nickname: "DAQ-01"
+    hostname: mu2edaq01.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-04"
+    hostname: mu2edaq04.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-07"
+    hostname: mu2edaq07.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-10"
+    hostname: mu2edaq10.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-11"
+    hostname: mu2edaq11.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-13"
+    hostname: mu2edaq13.fnal.gov
+    group: Test Stand
+  - nickname: "DAQ-22"
+    hostname: mu2edaq22.fnal.gov
+    group: Test Stand
+  
