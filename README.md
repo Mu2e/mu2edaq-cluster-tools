@@ -26,6 +26,7 @@ What does it do?
 - **Per-group and per-host configuration** — groups have common config settings that can be overridden by per host testtings (i.e. all tracker nodes use the same jump host and user list, but one special node that got pulled out to lab 3 uses a different jump proxy) 
 - **Multiple users per host** — choose which user you are using for a connection from a list of configured users
 - **Host DNS resolution on startup** — each host is resolved in the background; a green/red dot indicates reachability
+- **Host Population Report** - each host is queried to see how crowded it is
 - **Automatic proxy skip** — if the destination host is on the same local subnet as the client, the configured proxy jump is automatically bypassed
 - **SSH tunnel mode** — open a port-forward tunnel (`ssh -N -L`) instead of an interactive shell; prompts for local and remote port numbers
 - **Kerberos ticket panel** — displays active tickets with time-to-expiry color coding; `r` renews the principal via `kinit -R`
