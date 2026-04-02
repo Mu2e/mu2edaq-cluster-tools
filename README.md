@@ -33,6 +33,7 @@ What does it do?
 - **Network info panel** — shows local hostname, IP, domain, and detected subnets
 - **Error Displays** — if a connection fails, the stderr output is displayed so you can debug it
 - **Multiple config files** — auto-discovers `*.yaml` files in `./` and `./config/`; shows a picker when more than one is found
+- **Foreground and Background Tunnels** - starts ssh tunnels in either background or foreground
 
 ## Installation
 
