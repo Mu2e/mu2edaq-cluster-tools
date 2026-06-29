@@ -1,0 +1,47 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mu2edaq-cluster-tools"
+description = "Terminal-based SSH host selector for navigating a fleet of DAQ cluster nodes."
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    { name = "Andrew Norman" },
+]
+keywords = ["ssh", "tui", "textual", "daq", "cluster", "mu2e"]
+classifiers = [
+    "Environment :: Console",
+    "Intended Audience :: System Administrators",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS :: MacOS X",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Topic :: System :: Networking",
+    "Topic :: Utilities",
+]
+dynamic = ["version"]
+dependencies = [
+    "textual>=0.47.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+]
+
+[project.scripts]
+ssh-selector = "ssh_selector:main"
+
+[project.urls]
+Homepage = "https://github.com/Mu2e/mu2edaq-cluster-tools"
+Repository = "https://github.com/Mu2e/mu2edaq-cluster-tools"
+
+[tool.setuptools]
+py-modules = ["ssh_selector"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ssh_selector.__version__" }
