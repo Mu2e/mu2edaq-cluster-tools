@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """SSH Host Selector - A TUI application for managing SSH connections."""
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 import asyncio
 import ipaddress
