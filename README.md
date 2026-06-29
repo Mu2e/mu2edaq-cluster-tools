@@ -89,7 +89,7 @@ To uninstall:
 
 ### Manual installation
 
-If you prefer to manage the environment yourself, Python 3.10+ is required along with the packages listed in `requirements.txt`:
+If you prefer to manage the environment yourself, Python 3.9+ is required along with the packages listed in `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
@@ -100,24 +100,37 @@ Kerberos support on Windows is limited — it works within WSL and from PowerShe
 
 ## Usage
 
+If you installed with `pip` (or the install script), use the `ssh-selector` command:
+
 ```bash
 # Auto-discover config files in ./ and ./config/
-python ssh_selector.py
+ssh-selector
 
 # Specify a config file explicitly
-python ssh_selector.py -c path/to/hosts.yaml
+ssh-selector -c path/to/hosts.yaml
+
+# Print the version
+ssh-selector --version
 ```
 
-And of course you should setup a simple alias for this so that you can use it quickly.
+Running straight from a source checkout works too:
+
+```bash
+python ssh_selector.py
+python ssh_selector.py -c path/to/hosts.yaml
+```
 
 ### Key bindings
 
 | Key | Action |
 |-----|--------|
 | `Enter` | Connect (interactive shell) |
+| `n` | Connect in a new terminal window |
 | `t` | Open SSH tunnel (prompts for ports) |
+| `c` | Check which users are logged in on the selected host |
 | `/` | Filter host list |
 | `r` | Renew Kerberos ticket (`kinit -R`) |
+| `A` | About screen |
 | `q` | Quit |
 | `←` / `→` | Switch selected host within a two-column row |
 | `Escape` | Clear search / dismiss modal |
