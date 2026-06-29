@@ -37,7 +37,36 @@ What does it do?
 
 ## Installation
 
-Clone the repo and run the install script:
+### With pip
+
+The application is a standard Python package and can be installed with `pip`.
+This puts a `ssh-selector` command on your `PATH`:
+
+```bash
+pip install git+https://github.com/Mu2e/mu2edaq-cluster-tools.git
+```
+
+Or from a local checkout:
+
+```bash
+git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
+cd mu2edaq-cluster-tools
+pip install .            # add -e for an editable/development install
+```
+
+Then run it from a directory containing your `*.yaml` host config (or point at
+one explicitly):
+
+```bash
+ssh-selector                 # auto-discovers ./*.yaml and ./config/*.yaml
+ssh-selector -c hosts.yaml   # use a specific config file
+ssh-selector --version
+```
+
+### With the install script
+
+Alternatively, clone the repo and run the install script, which sets up a
+self-contained virtual environment:
 
 ```bash
 git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
