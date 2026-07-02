@@ -53,19 +53,19 @@ if [[ "${1:-}" == "--uninstall" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Find Python 3.10+
+# Find Python 3.9+
 # ---------------------------------------------------------------------------
 PYTHON=""
-for candidate in python3 python3.12 python3.11 python3.10 python; do
+for candidate in python3 python3.12 python3.11 python3.10 python3.9 python; do
     if cmd="$(command -v "${candidate}" 2>/dev/null)"; then
-        ok=$("${cmd}" -c "import sys; print('ok' if sys.version_info >= (3,10) else '')" 2>/dev/null || true)
+        ok=$("${cmd}" -c "import sys; print('ok' if sys.version_info >= (3,9) else '')" 2>/dev/null || true)
         if [[ "${ok}" == "ok" ]]; then
             PYTHON="${cmd}"
             break
         fi
     fi
 done
-[[ -n "${PYTHON}" ]] || die "Python 3.10 or newer is required but was not found on PATH."
+[[ -n "${PYTHON}" ]] || die "Python 3.9 or newer is required but was not found on PATH."
 
 PY_VERSION=$("${PYTHON}" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
 
