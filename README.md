@@ -60,7 +60,7 @@ To uninstall:
 
 ### Manual installation
 
-If you prefer to manage the environment yourself, Python 3.10+ is required along with the packages listed in `requirements.txt`:
+If you prefer to manage the environment yourself, Python 3.9+ is required (3.9 is the AlmaLinux 9 system python; verified) along with the packages listed in `requirements.txt`:
 
 ```bash
 pip install -r requirements.txt
