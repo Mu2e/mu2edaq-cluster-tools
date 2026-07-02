@@ -19,6 +19,9 @@ cache_lifetime: 600   # seconds; set lower (e.g. 60) for a busy cluster
 grouplist:
   - Gateways
   - DAQ Control
+  - Farm MC2
+  - Farm MC1
+  - MC1 Control Room
   - Timing Controls
   - DCS
   - Tracker
@@ -26,6 +29,7 @@ grouplist:
   - Cosmic Ray Veto
   - Stopping Target Monitor
   - Test Stand
+  - VNC
 
 groups:
   Gateways:
@@ -37,8 +41,48 @@ groups:
       - mu2edcs
       - mu2etrk
     # no proxy_jump — gateways are directly reachable
-
+  VNC:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2ecr01
+      - mu2ecr02
+      - mu2ecr03
+      - mu2ecr04
+      - mu2ecr05
+      - mu2ecr06
+      - mu2eshift
+      - mu2edcs
+      - mu2etrk
+      - mu2ecalo
+  Farm MC1:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+  Farm MC2:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
   DAQ Control:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+  MC1 Control Room:
     proxy_jump: mu2egateway01.fnal.gov
     users:
       - default
@@ -106,7 +150,104 @@ groups:
       - mu2etrk
 
 hosts:
+  # -- VNC Servers (for remote desktop ---------------------------------------
+  - nickname: "VNC Server 01"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr01
+  - nickname: "VNC Server 02"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr02
+  - nickname: "VNC Server 03"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr03
+  - nickname: "VNC Server 04"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr04
+  - nickname: "VNC Server 05"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr05
+  - nickname: "VNC Server 06"
+    hostname: mu2e-mgr-01.fnal.gov
+    group: VNC
+    users:
+      - mu2ecr06
 
+  # -- MC2 Farm Nodes (for batch jobs) ---------------------------------------------
+  - nickname: "Worker Node 01"
+    hostname: mu2e-worker-01.fnal.gov
+    group: Farm MC2
+  - nickname: "Worker Node 02"
+    hostname: mu2e-worker-02.fnal.gov
+    group: Farm MC2
+  - nickname: "Worker Node 03"
+    hostname: mu2e-worker-03.fnal.gov
+    group: Farm MC2
+
+    # -- MC1 Worker Nodes (for batch jobs) ----------------------------------------
+  - nickname: "MC1 Worker Node 01"
+    hostname: mu2e-mc1-worker-01.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 02"
+    hostname: mu2e-mc1-worker-02.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 03"
+    hostname: mu2e-mc1-worker-03.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 04"
+    hostname: mu2e-mc1-worker-04.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 05"
+    hostname: mu2e-mc1-worker-05.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 06"
+    hostname: mu2e-mc1-worker-06.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 07"
+    hostname: mu2e-mc1-worker-07.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 08"
+    hostname: mu2e-mc1-worker-08.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 09"
+    hostname: mu2e-mc1-worker-09.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 10"
+    hostname: mu2e-mc1-worker-10.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 11"
+    hostname: mu2e-mc1-worker-11.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 12"
+    hostname: mu2e-mc1-worker-12.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 13"
+    hostname: mu2e-mc1-worker-13.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 14"
+    hostname: mu2e-mc1-worker-14.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 15"
+    hostname: mu2e-mc1-worker-15.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 16"
+    hostname: mu2e-mc1-worker-16.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 17"
+    hostname: mu2e-mc1-worker-17.fnal.gov
+    group: Farm MC1
+  - nickname: "MC1 Worker Node 18"
+    hostname: mu2e-mc1-worker-18.fnal.gov
+    group: Farm MC1
   # ── Gateways ──────────────────────────────────────────────────────────────
 
   - nickname: "Gateway 01"
@@ -135,6 +276,20 @@ hosts:
   - nickname: "Data Logger 02"
     hostname: mu2e-dl-02.fnal.gov
     group: DAQ Control
+
+  # -- MC1 Control Room ───────────────────────────────────────────────────────
+  - nickname: "MC1 Control Room 01"
+    hostname: mu2e-mc1-cr-01.fnal.gov
+    group: MC1 Control Room
+  - nickname: "MC1 Control Room 02"
+    hostname: mu2e-mc1-cr-02.fnal.gov
+    group: MC1 Control Room
+  - nickname: "MC1 Control Room 03"
+    hostname: mu2e-mc1-cr-03.fnal.gov
+    group: MC1 Control Room
+  - nickname: "MC1 Control Room 04"
+    hostname: mu2e-mc1-cr-04.fnal.gov
+    group: MC1 Control Room
 
   # ── Timing Controls ────────────────────────────────────────────────────────
 
