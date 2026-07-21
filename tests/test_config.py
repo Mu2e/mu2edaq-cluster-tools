@@ -47,6 +47,10 @@ class TestLoadConfigMinimal:
         cfg = load_config(minimal_config)
         assert cfg.hosts[0].proxy_jump is None
 
+    def test_no_proxy_user(self, minimal_config):
+        cfg = load_config(minimal_config)
+        assert cfg.hosts[0].proxy_user is None
+
     def test_default_cache_lifetime(self, minimal_config):
         cfg = load_config(minimal_config)
         assert cfg.cache_lifetime == 600
@@ -168,6 +172,63 @@ class TestLoadConfigHostFields:
         """)
         cfg = load_config(p)
         assert cfg.hosts[0].proxy_jump == "gw.example.com"
+
+    def test_explicit_proxy_user(self, tmp_path):
+        p = yaml_file(tmp_path, """
+            hosts:
+              - hostname: srv.example.com
+                proxy_jump: gw.example.com
+                proxy_user: proxyacct
+        """)
+        cfg = load_config(p)
+        assert cfg.hosts[0].proxy_user == "proxyacct"
+
+    def test_group_default_proxy_user_applied(self, tmp_path):
+        p = yaml_file(tmp_path, """
+            grouplist:
+              - Backend
+            groups:
+              Backend:
+                proxy_jump: gw.example.com
+                proxy_user: proxyacct
+            hosts:
+              - hostname: srv.example.com
+                group: Backend
+        """)
+        cfg = load_config(p)
+        assert cfg.hosts[0].proxy_user == "proxyacct"
+
+    def test_host_proxy_user_overrides_group(self, tmp_path):
+        p = yaml_file(tmp_path, """
+            grouplist:
+              - Backend
+            groups:
+              Backend:
+                proxy_jump: gw.example.com
+                proxy_user: groupacct
+            hosts:
+              - hostname: srv.example.com
+                group: Backend
+                proxy_user: hostacct
+        """)
+        cfg = load_config(p)
+        assert cfg.hosts[0].proxy_user == "hostacct"
+
+    def test_host_null_proxy_user_overrides_group(self, tmp_path):
+        p = yaml_file(tmp_path, """
+            grouplist:
+              - Backend
+            groups:
+              Backend:
+                proxy_jump: gw.example.com
+                proxy_user: groupacct
+            hosts:
+              - hostname: srv.example.com
+                group: Backend
+                proxy_user: null
+        """)
+        cfg = load_config(p)
+        assert cfg.hosts[0].proxy_user is None
 
     def test_group_field_stored(self, tmp_path):
         p = yaml_file(tmp_path, """

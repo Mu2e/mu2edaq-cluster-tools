@@ -66,6 +66,7 @@ class Host:
     users: list[str] = field(default_factory=lambda: ["default"])
     port: int = 22
     proxy_jump: Optional[str] = None
+    proxy_user: Optional[str] = None
     group: str = ""
 
     def __post_init__(self) -> None:
@@ -74,13 +75,26 @@ class Host:
         if not self.users:
             self.users = ["default"]
 
+    def proxy_target(self, user: str) -> Optional[str]:
+        """Return the ProxyJump target (user@host) for the given connecting user.
+
+        Uses proxy_user if configured; otherwise defaults to the same user
+        being used for the final destination host.
+        """
+        if not self.proxy_jump:
+            return None
+        if "@" in self.proxy_jump:
+            return self.proxy_jump
+        proxy_user = self.proxy_user if self.proxy_user else user
+        return f"{resolve_user(proxy_user)}@{self.proxy_jump}"
+
     def ssh_command(self, user: str, skip_proxy: bool = False) -> list[str]:
         """Build the SSH command list for this host and the given user entry."""
         cmd = ["ssh"]
         if self.port != 22:
             cmd.extend(["-p", str(self.port)])
         if self.proxy_jump and not skip_proxy:
-            cmd.extend(["-J", self.proxy_jump])
+            cmd.extend(["-J", self.proxy_target(user)])
         cmd.extend(["-l", resolve_user(user)])
         cmd.append(self.hostname)
         return cmd
@@ -93,7 +107,7 @@ class Host:
         if self.port != 22:
             cmd.extend(["-p", str(self.port)])
         if self.proxy_jump and not skip_proxy:
-            cmd.extend(["-J", self.proxy_jump])
+            cmd.extend(["-J", self.proxy_target(user)])
         cmd.extend(["-l", resolve_user(user)])
         cmd.append(self.hostname)
         return cmd
@@ -104,6 +118,7 @@ class GroupConfig:
     """Per-group defaults that individual host entries can override."""
     users: list[str] = field(default_factory=list)
     proxy_jump: Optional[str] = None
+    proxy_user: Optional[str] = None
 
 
 @dataclass
@@ -141,6 +156,7 @@ def load_config(config_path: Path) -> Config:
         groups[str(gname)] = GroupConfig(
             users=_parse_users(raw_users) if raw_users is not None else [],
             proxy_jump=gdata.get("proxy_jump") or None,
+            proxy_user=gdata.get("proxy_user") or None,
         )
 
     hosts: list[Host] = []
@@ -163,12 +179,21 @@ def load_config(config_path: Path) -> Config:
         else:
             proxy_jump = grp.proxy_jump
 
+        # proxy_user: host entry wins if key is present (even if null), else group default.
+        # If left unset entirely, ssh_command()/tunnel_command() fall back to the same
+        # user used for the final destination host.
+        if "proxy_user" in entry:
+            proxy_user = entry["proxy_user"] or None
+        else:
+            proxy_user = grp.proxy_user
+
         hosts.append(Host(
             hostname=entry["hostname"],
             nickname=entry.get("nickname", entry["hostname"]),
             users=users,
             port=int(entry.get("port", 22)),
             proxy_jump=proxy_jump,
+            proxy_user=proxy_user,
             group=group_name,
         ))
 
@@ -1177,9 +1202,9 @@ class SSHSelector(App[AppResult]):
         if not host.proxy_jump:
             proxy_str = "[dim]none[/dim]"
         elif self._should_skip_proxy(host):
-            proxy_str = f"[dim]{host.proxy_jump} (skipped — same subnet)[/dim]"
+            proxy_str = f"[dim]{host.proxy_target(host.users[0])} (skipped — same subnet)[/dim]"
         else:
-            proxy_str = host.proxy_jump
+            proxy_str = host.proxy_target(host.users[0])
         if host.hostname not in self._host_ips:
             ip_str = "[dim]resolving…[/dim]"
         elif self._host_ips[host.hostname]:

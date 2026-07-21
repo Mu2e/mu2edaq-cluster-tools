@@ -11,6 +11,8 @@
 #   port        — SSH port (default 22)
 #   users       — overrides group users list; first entry is default login
 #   proxy_jump  — overrides group proxy_jump; set to null to disable for a host
+#   proxy_user  — user to log in as on the proxy_jump host; defaults to the same
+#                 user used for the final destination if unset
 #
 # The special user value "default" resolves to the current OS user.
 

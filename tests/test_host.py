@@ -29,6 +29,17 @@ def host_with_proxy():
     )
 
 
+@pytest.fixture
+def host_with_proxy_user():
+    return Host(
+        hostname="node01.example.com",
+        nickname="Node 01",
+        users=["default"],
+        proxy_jump="gateway.example.com",
+        proxy_user="proxyacct",
+    )
+
+
 # ---------------------------------------------------------------------------
 # Host construction
 # ---------------------------------------------------------------------------
@@ -57,6 +68,35 @@ class TestHostDefaults:
     def test_proxy_jump_defaults_to_none(self):
         h = Host(hostname="srv.example.com")
         assert h.proxy_jump is None
+
+    def test_proxy_user_defaults_to_none(self):
+        h = Host(hostname="srv.example.com")
+        assert h.proxy_user is None
+
+
+# ---------------------------------------------------------------------------
+# Host.proxy_target
+# ---------------------------------------------------------------------------
+
+class TestProxyTarget:
+    def test_no_proxy_jump_returns_none(self, plain_host):
+        assert plain_host.proxy_target("alice") is None
+
+    def test_defaults_to_connecting_user(self, host_with_proxy):
+        assert host_with_proxy.proxy_target("mu2edaq") == "mu2edaq@gateway.example.com"
+
+    def test_resolves_default_token(self, host_with_proxy):
+        assert host_with_proxy.proxy_target("default") == f"{CURRENT_USER}@gateway.example.com"
+
+    def test_proxy_user_overrides_connecting_user(self, host_with_proxy_user):
+        assert host_with_proxy_user.proxy_target("alice") == "proxyacct@gateway.example.com"
+
+    def test_embedded_at_sign_passed_through_unchanged(self):
+        h = Host(
+            hostname="node01.example.com",
+            proxy_jump="legacyuser@gateway.example.com",
+        )
+        assert h.proxy_target("alice") == "legacyuser@gateway.example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +127,19 @@ class TestSSHCommand:
     def test_proxy_jump_included(self, host_with_proxy):
         cmd = host_with_proxy.ssh_command("alice")
         assert "-J" in cmd
-        assert cmd[cmd.index("-J") + 1] == "gateway.example.com"
+
+    def test_proxy_jump_defaults_to_connecting_user(self, host_with_proxy):
+        """Regression test for #3: jump host should use the same user as the destination."""
+        cmd = host_with_proxy.ssh_command("mu2edaq")
+        assert cmd[cmd.index("-J") + 1] == "mu2edaq@gateway.example.com"
+
+    def test_proxy_jump_default_resolves_default_user(self, host_with_proxy):
+        cmd = host_with_proxy.ssh_command("default")
+        assert cmd[cmd.index("-J") + 1] == f"{CURRENT_USER}@gateway.example.com"
+
+    def test_proxy_user_overrides_connecting_user(self, host_with_proxy_user):
+        cmd = host_with_proxy_user.ssh_command("alice")
+        assert cmd[cmd.index("-J") + 1] == "proxyacct@gateway.example.com"
 
     def test_proxy_jump_skipped_when_requested(self, host_with_proxy):
         cmd = host_with_proxy.ssh_command("alice", skip_proxy=True)
@@ -136,6 +188,14 @@ class TestTunnelCommand:
     def test_proxy_jump_included(self, host_with_proxy):
         cmd = host_with_proxy.tunnel_command("alice", 8080, 8080)
         assert "-J" in cmd
+
+    def test_proxy_jump_defaults_to_connecting_user(self, host_with_proxy):
+        cmd = host_with_proxy.tunnel_command("mu2edaq", 8080, 8080)
+        assert cmd[cmd.index("-J") + 1] == "mu2edaq@gateway.example.com"
+
+    def test_proxy_user_overrides_connecting_user(self, host_with_proxy_user):
+        cmd = host_with_proxy_user.tunnel_command("alice", 8080, 8080)
+        assert cmd[cmd.index("-J") + 1] == "proxyacct@gateway.example.com"
 
     def test_proxy_jump_skipped(self, host_with_proxy):
         cmd = host_with_proxy.tunnel_command("alice", 8080, 8080, skip_proxy=True)

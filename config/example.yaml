@@ -7,6 +7,7 @@
 # Per-group defaults (under `groups`):
 #   users       — default user list for all hosts in the group
 #   proxy_jump  — default ProxyJump for all hosts in the group
+#   proxy_user  — default user to log in as on the proxy_jump host
 #
 # Per-host fields:
 #   hostname    — required; address SSH connects to
@@ -15,9 +16,15 @@
 #   port        — SSH port (default 22)
 #   users       — overrides the group users list; first entry is the default login
 #   proxy_jump  — overrides the group proxy_jump; set to null to disable
+#   proxy_user  — overrides the group proxy_user; set to null to fall back to the default
 #   user        — legacy scalar form; equivalent to  users: [value]
 #
 # The special user value "default" resolves to the current OS user at runtime.
+#
+# proxy_user controls who ssh logs in as on the proxy_jump host (i.e. the "-J"
+# jump host). If not set (for the host or its group), it defaults to the same
+# user used for the final destination — e.g. connecting as "deploy" to a
+# Backend host jumps through gateway.example.com as "deploy" too.
 
 grouplist:
   - Access
@@ -40,6 +47,7 @@ groups:
 
   Monitoring:
     proxy_jump: gateway.example.com
+    proxy_user: monitor   # always jump through the gateway as "monitor", regardless of dest user
     users:
       - default
       - ci
