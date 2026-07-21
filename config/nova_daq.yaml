@@ -1,0 +1,212 @@
+# SSH Host Selector — Mu2e host configuration
+#
+# grouplist   — ordered list of group names for display
+# groups      — per-group defaults (users, proxy_jump); host entries override
+# hosts       — individual host entries; omit users/proxy_jump to inherit group defaults
+#
+# Host fields:
+#   hostname    — required; address SSH connects to
+#   nickname    — display name (defaults to hostname)
+#   group       — must match a grouplist entry
+#   port        — SSH port (default 22)
+#   users       — overrides group users list; first entry is default login
+#   proxy_jump  — overrides group proxy_jump; set to null to disable for a host
+#
+# The special user value "default" resolves to the current OS user.
+
+cache_lifetime: 600   # seconds; set lower (e.g. 60) for a busy cluster
+
+grouplist:
+  - Gateways
+  - VNC
+  - DAQ Control
+  - Farm FarDet
+  - Farm NearDet
+  - Roc-West Control Room
+  - Timing Controls
+
+groups:
+  Gateways:
+    users:
+      - novadaq
+      - novaraw
+      - novadcs
+      - novacr01
+      - novacr02
+      - novacr03
+      - novacr04
+    # no proxy_jump — gateways are directly reachable
+  VNC:
+    proxy_jump: novadaq-far-gateway-01.fnal.gov
+    users:
+      - default
+      - novadaq
+      - novaraw
+      - novadcs
+  Farm FarDet:
+    proxy_jump: novadaq-far-gateway-01.fnal.gov
+    users:
+      - default
+      - novadaq
+      - novaraw
+      - novadcs
+  Farm NearDet:
+    proxy_jump: novadaq-near-gateway-01.fnal.gov
+    users:
+      - default
+      - novadaq
+      - novaraw
+      - novadcs
+
+  DAQ Control:
+    proxy_jump: novadaq-far-gateway-01.fnal.gov
+    users:
+      - novadaq
+      - novaraw
+      - novadcs
+  Roc-West Control Room:
+    proxy_jump: novagpvm03.fnal.gov
+    users:
+      - novadaq
+      - novaraw
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  Timing Controls:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
+  DCS:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - mu2edcs
+      - mu2eshift
+      - mu2ecalo
+      - mu2edaq
+      - mu2etrk
+  
+hosts:
+  # -- VNC Servers (for remote desktop ---------------------------------------
+  - nickname: "VNC Server 01"
+    hostname: novadaq-far-mgr-03.fnal.gov
+    group: VNC
+    users:
+      - novacr01
+  - nickname: "VNC Server 02"
+    hostname: novadaq-far-mgr-03.fnal.gov
+    group: VNC
+    users:
+      - novacr02
+  - nickname: "VNC Server 03"
+    hostname: novadaq-far-mgr-03.fnal.gov
+    group: VNC
+    users:
+      - novacr03
+  - nickname: "VNC Server 04"
+    hostname: novadaq-far-mgr-03.fnal.gov
+    group: VNC
+    users:
+      - novacr04
+  
+  # -- Nova DAQ Far Farm Nodes (for trigger and daq) ---------------------------------------------
+  - nickname: "Far Farm-01"
+    hostname: novadaq-far-farm-01.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-02"
+    hostname: novadaq-far-farm-02.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-03"
+    hostname: novadaq-far-farm-03.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-04"
+    hostname: novadaq-far-farm-04.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-05"
+    hostname: novadaq-far-farm-05.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-06"
+    hostname: novadaq-far-farm-06.fnal.gov
+    group: Farm FarDet
+ 
+
+    # -- Nova DAQ Near Farm Nodes (for trigger and daq) ----------------------------------------
+  - nickname: "Near Farm-01"
+    hostname: novadaq-near-farm-01.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-02"
+    hostname: novadaq-near-farm-02.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-03"
+    hostname: novadaq-near-farm-03.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-04"
+    hostname: novadaq-near-farm-04.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-05"
+    hostname: novadaq-near-farm-05.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-06"
+    hostname: novadaq-near-farm-06.fnal.gov
+    group: Farm NearDet
+  - nickname: "Near Farm-07"
+    hostname: novadaq-near-farm-07.fnal.gov
+    group: Farm NearDet
+  
+  # ── Gateways ──────────────────────────────────────────────────────────────
+
+  - nickname: "Far Gateway 01"
+    hostname: novadaq-far-gateway-01.fnal.gov
+    group: Gateways
+
+  - nickname: "Near Gateway 02"
+    hostname: novadaq-near-gateway-01.fnal.gov
+    group: Gateways
+
+  # ── DAQ Control ───────────────────────────────────────────────────────────
+
+  - nickname: "Far MGR 01"
+    hostname: novadaq-far-mgr-01.fnal.gov
+    group: DAQ Control
+  - nickname: "Far MGR 02"
+    hostname: novadaq-far-mgr-02.fnal.gov
+    group: DAQ Control
+  - nickname: "Far MGR 03"
+    hostname: novadaq-far-mgr-03.fnal.gov
+    group: DAQ Control
+  - nickname: "Near MGR 01"
+    hostname: novadaq-near-mgr-01.fnal.gov
+    group: DAQ Control
+    proxy_jump: novadaq-near-gateway-01.fnal.gov
+  - nickname: "Near MGR 02"
+    hostname: novadaq-near-mgr-02.fnal.gov
+    group: DAQ Control
+    proxy_jump: novadaq-near-gateway-01.fnal.gov
+
+
+  # ── Timing Controls ────────────────────────────────────────────────────────
+
+  - nickname: "Timing Controls 01 (CFO)"
+    hostname: mu2e-cfo-01.fnal.gov
+    group: Timing Controls
+
+  - nickname: "Timing Controls 02 (CFO)"
+    hostname: mu2e-cfo-02.fnal.gov
+    group: Timing Controls  
+
+  # ── DCS ───────────────────────────────────────────────────────────────────
+
+  - nickname: "Detector Control System 01"
+    hostname: mu2e-dcs-01.fnal.gov
+    group: DCS
+
+  - nickname: "Detector Control System 02"
+    hostname: mu2e-dcs-02.fnal.gov
+    group: DCS
