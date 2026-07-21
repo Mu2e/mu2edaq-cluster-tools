@@ -40,6 +40,10 @@ groups:
     proxy_jump: novadaq-far-gateway-01.fnal.gov
     users:
       - default
+      - novacr01
+      - novacr02
+      - novacr03
+      - novacr04
       - novadaq
       - novaraw
       - novadcs
@@ -96,22 +100,22 @@ groups:
 hosts:
   # -- VNC Servers (for remote desktop ---------------------------------------
   - nickname: "VNC Server 01"
-    hostname: novadaq-far-mgr-03.fnal.gov
+    hostname: novadaq-far-mgr-02.fnal.gov
     group: VNC
     users:
       - novacr01
   - nickname: "VNC Server 02"
-    hostname: novadaq-far-mgr-03.fnal.gov
+    hostname: novadaq-far-mgr-02.fnal.gov
     group: VNC
     users:
       - novacr02
   - nickname: "VNC Server 03"
-    hostname: novadaq-far-mgr-03.fnal.gov
+    hostname: novadaq-far-mgr-02.fnal.gov
     group: VNC
     users:
       - novacr03
   - nickname: "VNC Server 04"
-    hostname: novadaq-far-mgr-03.fnal.gov
+    hostname: novadaq-far-mgr-02.fnal.gov
     group: VNC
     users:
       - novacr04
@@ -134,6 +138,588 @@ hosts:
     group: Farm FarDet
   - nickname: "Far Farm-06"
     hostname: novadaq-far-farm-06.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-07"
+    hostname: novadaq-far-farm-07.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-08"
+    hostname: novadaq-far-farm-08.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-09"
+    hostname: novadaq-far-farm-09.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-10"
+    hostname: novadaq-far-farm-10.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-11"
+    hostname: novadaq-far-farm-11.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-12"
+    hostname: novadaq-far-farm-12.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-13"
+    hostname: novadaq-far-farm-13.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-14"
+    hostname: novadaq-far-farm-14.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-15"
+    hostname: novadaq-far-farm-15.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-16"
+    hostname: novadaq-far-farm-16.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-17"
+    hostname: novadaq-far-farm-17.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-18"
+    hostname: novadaq-far-farm-18.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-19"
+    hostname: novadaq-far-farm-19.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-20"
+    hostname: novadaq-far-farm-20.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-21"
+    hostname: novadaq-far-farm-21.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-22"
+    hostname: novadaq-far-farm-22.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-23"
+    hostname: novadaq-far-farm-23.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-24"
+    hostname: novadaq-far-farm-24.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-25"
+    hostname: novadaq-far-farm-25.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-26"
+    hostname: novadaq-far-farm-26.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-27"
+    hostname: novadaq-far-farm-27.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-28"
+    hostname: novadaq-far-farm-28.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-29"
+    hostname: novadaq-far-farm-29.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-30"
+    hostname: novadaq-far-farm-30.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-31"
+    hostname: novadaq-far-farm-31.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-32"
+    hostname: novadaq-far-farm-32.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-33"
+    hostname: novadaq-far-farm-33.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-34"
+    hostname: novadaq-far-farm-34.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-35"
+    hostname: novadaq-far-farm-35.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-36"
+    hostname: novadaq-far-farm-36.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-37"
+    hostname: novadaq-far-farm-37.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-38"
+    hostname: novadaq-far-farm-38.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-39"
+    hostname: novadaq-far-farm-39.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-40"
+    hostname: novadaq-far-farm-40.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-41"
+    hostname: novadaq-far-farm-41.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-42"
+    hostname: novadaq-far-farm-42.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-43"
+    hostname: novadaq-far-farm-43.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-44"
+    hostname: novadaq-far-farm-44.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-45"
+    hostname: novadaq-far-farm-45.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-46"
+    hostname: novadaq-far-farm-46.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-47"
+    hostname: novadaq-far-farm-47.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-48"
+    hostname: novadaq-far-farm-48.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-49"
+    hostname: novadaq-far-farm-49.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-50"
+    hostname: novadaq-far-farm-50.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-51"
+    hostname: novadaq-far-farm-51.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-52"
+    hostname: novadaq-far-farm-52.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-53"
+    hostname: novadaq-far-farm-53.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-54"
+    hostname: novadaq-far-farm-54.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-55"
+    hostname: novadaq-far-farm-55.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-56"
+    hostname: novadaq-far-farm-56.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-57"
+    hostname: novadaq-far-farm-57.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-58"
+    hostname: novadaq-far-farm-58.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-59"
+    hostname: novadaq-far-farm-59.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-60"
+    hostname: novadaq-far-farm-60.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-61"
+    hostname: novadaq-far-farm-61.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-62"
+    hostname: novadaq-far-farm-62.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-63"
+    hostname: novadaq-far-farm-63.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-64"
+    hostname: novadaq-far-farm-64.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-65"
+    hostname: novadaq-far-farm-65.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-66"
+    hostname: novadaq-far-farm-66.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-67"
+    hostname: novadaq-far-farm-67.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-68"
+    hostname: novadaq-far-farm-68.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-69"
+    hostname: novadaq-far-farm-69.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-70"
+    hostname: novadaq-far-farm-70.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-71"
+    hostname: novadaq-far-farm-71.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-72"
+    hostname: novadaq-far-farm-72.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-73"
+    hostname: novadaq-far-farm-73.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-74"
+    hostname: novadaq-far-farm-74.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-75"
+    hostname: novadaq-far-farm-75.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-76"
+    hostname: novadaq-far-farm-76.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-77"
+    hostname: novadaq-far-farm-77.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-78"
+    hostname: novadaq-far-farm-78.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-79"
+    hostname: novadaq-far-farm-79.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-80"
+    hostname: novadaq-far-farm-80.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-81"
+    hostname: novadaq-far-farm-81.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-82"
+    hostname: novadaq-far-farm-82.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-83"
+    hostname: novadaq-far-farm-83.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-84"
+    hostname: novadaq-far-farm-84.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-85"
+    hostname: novadaq-far-farm-85.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-86"
+    hostname: novadaq-far-farm-86.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-87"
+    hostname: novadaq-far-farm-87.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-88"
+    hostname: novadaq-far-farm-88.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-89"
+    hostname: novadaq-far-farm-89.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-90"
+    hostname: novadaq-far-farm-90.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-91"
+    hostname: novadaq-far-farm-91.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-92"
+    hostname: novadaq-far-farm-92.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-93"
+    hostname: novadaq-far-farm-93.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-94"
+    hostname: novadaq-far-farm-94.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-95"
+    hostname: novadaq-far-farm-95.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-96"
+    hostname: novadaq-far-farm-96.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-97"
+    hostname: novadaq-far-farm-97.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-98"
+    hostname: novadaq-far-farm-98.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-99"
+    hostname: novadaq-far-farm-99.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-100"
+    hostname: novadaq-far-farm-100.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-101"
+    hostname: novadaq-far-farm-101.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-102"
+    hostname: novadaq-far-farm-102.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-103"
+    hostname: novadaq-far-farm-103.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-104"
+    hostname: novadaq-far-farm-104.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-105"
+    hostname: novadaq-far-farm-105.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-106"
+    hostname: novadaq-far-farm-106.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-107"
+    hostname: novadaq-far-farm-107.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-108"
+    hostname: novadaq-far-farm-108.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-109"
+    hostname: novadaq-far-farm-109.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-110"
+    hostname: novadaq-far-farm-110.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-111"
+    hostname: novadaq-far-farm-111.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-112"
+    hostname: novadaq-far-farm-112.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-113"
+    hostname: novadaq-far-farm-113.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-114"
+    hostname: novadaq-far-farm-114.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-115"
+    hostname: novadaq-far-farm-115.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-116"
+    hostname: novadaq-far-farm-116.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-117"
+    hostname: novadaq-far-farm-117.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-118"
+    hostname: novadaq-far-farm-118.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-119"
+    hostname: novadaq-far-farm-119.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-120"
+    hostname: novadaq-far-farm-120.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-121"
+    hostname: novadaq-far-farm-121.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-122"
+    hostname: novadaq-far-farm-122.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-123"
+    hostname: novadaq-far-farm-123.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-124"
+    hostname: novadaq-far-farm-124.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-125"
+    hostname: novadaq-far-farm-125.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-126"
+    hostname: novadaq-far-farm-126.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-127"
+    hostname: novadaq-far-farm-127.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-128"
+    hostname: novadaq-far-farm-128.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-129"
+    hostname: novadaq-far-farm-129.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-130"
+    hostname: novadaq-far-farm-130.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-131"
+    hostname: novadaq-far-farm-131.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-132"
+    hostname: novadaq-far-farm-132.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-133"
+    hostname: novadaq-far-farm-133.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-134"
+    hostname: novadaq-far-farm-134.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-135"
+    hostname: novadaq-far-farm-135.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-136"
+    hostname: novadaq-far-farm-136.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-137"
+    hostname: novadaq-far-farm-137.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-138"
+    hostname: novadaq-far-farm-138.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-139"
+    hostname: novadaq-far-farm-139.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-140"
+    hostname: novadaq-far-farm-140.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-141"
+    hostname: novadaq-far-farm-141.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-142"
+    hostname: novadaq-far-farm-142.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-143"
+    hostname: novadaq-far-farm-143.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-144"
+    hostname: novadaq-far-farm-144.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-145"
+    hostname: novadaq-far-farm-145.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-146"
+    hostname: novadaq-far-farm-146.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-147"
+    hostname: novadaq-far-farm-147.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-148"
+    hostname: novadaq-far-farm-148.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-149"
+    hostname: novadaq-far-farm-149.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-150"
+    hostname: novadaq-far-farm-150.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-151"
+    hostname: novadaq-far-farm-151.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-152"
+    hostname: novadaq-far-farm-152.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-153"
+    hostname: novadaq-far-farm-153.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-154"
+    hostname: novadaq-far-farm-154.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-155"
+    hostname: novadaq-far-farm-155.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-156"
+    hostname: novadaq-far-farm-156.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-157"
+    hostname: novadaq-far-farm-157.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-158"
+    hostname: novadaq-far-farm-158.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-159"
+    hostname: novadaq-far-farm-159.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-160"
+    hostname: novadaq-far-farm-160.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-161"
+    hostname: novadaq-far-farm-161.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-162"
+    hostname: novadaq-far-farm-162.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-163"
+    hostname: novadaq-far-farm-163.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-164"
+    hostname: novadaq-far-farm-164.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-165"
+    hostname: novadaq-far-farm-165.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-166"
+    hostname: novadaq-far-farm-166.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-167"
+    hostname: novadaq-far-farm-167.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-168"
+    hostname: novadaq-far-farm-168.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-169"
+    hostname: novadaq-far-farm-169.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-170"
+    hostname: novadaq-far-farm-170.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-171"
+    hostname: novadaq-far-farm-171.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-172"
+    hostname: novadaq-far-farm-172.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-173"
+    hostname: novadaq-far-farm-173.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-174"
+    hostname: novadaq-far-farm-174.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-175"
+    hostname: novadaq-far-farm-175.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-176"
+    hostname: novadaq-far-farm-176.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-177"
+    hostname: novadaq-far-farm-177.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-178"
+    hostname: novadaq-far-farm-178.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-179"
+    hostname: novadaq-far-farm-179.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-180"
+    hostname: novadaq-far-farm-180.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-181"
+    hostname: novadaq-far-farm-181.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-182"
+    hostname: novadaq-far-farm-182.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-183"
+    hostname: novadaq-far-farm-183.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-184"
+    hostname: novadaq-far-farm-184.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-185"
+    hostname: novadaq-far-farm-185.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-186"
+    hostname: novadaq-far-farm-186.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-187"
+    hostname: novadaq-far-farm-187.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-188"
+    hostname: novadaq-far-farm-188.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-189"
+    hostname: novadaq-far-farm-189.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-190"
+    hostname: novadaq-far-farm-190.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-191"
+    hostname: novadaq-far-farm-191.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-192"
+    hostname: novadaq-far-farm-192.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-193"
+    hostname: novadaq-far-farm-193.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-194"
+    hostname: novadaq-far-farm-194.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-195"
+    hostname: novadaq-far-farm-195.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-196"
+    hostname: novadaq-far-farm-196.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-197"
+    hostname: novadaq-far-farm-197.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-198"
+    hostname: novadaq-far-farm-198.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-199"
+    hostname: novadaq-far-farm-199.fnal.gov
+    group: Farm FarDet
+  - nickname: "Far Farm-200"
+    hostname: novadaq-far-farm-200.fnal.gov
     group: Farm FarDet
  
 
