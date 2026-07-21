@@ -1,0 +1,92 @@
+.TH LAN-SCAN 1 "2026-07-21" "mu2edaq-cluster-tools" "User Commands"
+.SH NAME
+lan-scan \- probe the local LAN and list responding hosts
+.SH SYNOPSIS
+.B lan-scan
+[\fIOPTIONS\fR]
+.SH DESCRIPTION
+.B lan-scan
+discovers hosts on the local network by sending an ICMP ping (and,
+optionally, TCP connect probes) to every address in a subnet, then
+prints a table of the hosts that responded along with their reverse-DNS
+name and IP address.
+
+If no network is given, the local IPv4 network(s) are auto-detected from
+the host's network interfaces (\fBip addr\fR on Linux, \fBifconfig\fR on
+macOS/BSD, \fBipconfig\fR on Windows).
+.SH OPTIONS
+.TP
+\fB\-n\fR, \fB\-\-network\fR \fICIDR\fR
+Network to scan, e.g. \fB192.168.1.0/24\fR. Default: auto-detect.
+.TP
+\fB\-c\fR, \fB\-\-config\fR \fIFILE\fR
+YAML configuration file supplying defaults for any of the options below.
+See \fIconfig/lan_scan.yaml.example\fR.
+.TP
+\fB\-t\fR, \fB\-\-timeout\fR \fISECONDS\fR
+Per-host probe timeout. Default: 1.0.
+.TP
+\fB\-w\fR, \fB\-\-workers\fR \fICOUNT\fR
+Number of concurrent probe threads. Default: 64.
+.TP
+\fB\-p\fR, \fB\-\-ports\fR \fILIST\fR
+Comma-separated TCP ports to try (e.g. \fB22,80,443\fR) if a host does
+not answer ICMP ping, such as one behind a firewall that filters it.
+.TP
+\fB\-\-no\-dns\fR
+Skip reverse DNS lookups; report IP addresses only. Faster on large
+subnets.
+.TP
+\fB\-\-json\fR
+Print results as a JSON array instead of a table.
+.TP
+\fB\-\-version\fR
+Print the version number and exit.
+.SH CONFIGURATION PRECEDENCE
+For every option, the effective value is chosen in this order:
+commandline flag, then environment variable, then the \fB\-\-config\fR
+YAML file, then the built-in default.
+.SH ENVIRONMENT
+.TP
+.B LAN_SCAN_NETWORK
+Overrides the network to scan (same syntax as \fB\-\-network\fR).
+.TP
+.B LAN_SCAN_TIMEOUT
+Overrides the per-host probe timeout in seconds.
+.TP
+.B LAN_SCAN_WORKERS
+Overrides the number of concurrent probe threads.
+.TP
+.B LAN_SCAN_PORTS
+Overrides the TCP fallback port list (same syntax as \fB\-\-ports\fR).
+.SH EXIT STATUS
+.TP
+.B 0
+Scan completed (regardless of how many hosts responded).
+.TP
+.B 1
+Could not auto-detect a local network and none was given.
+.TP
+.B 2
+The network given via \fB\-\-network\fR, an environment variable, or the
+config file was not a valid CIDR.
+.SH EXAMPLES
+Scan the auto-detected local subnet:
+.PP
+.RS
+lan-scan
+.RE
+.PP
+Scan a specific subnet, skipping DNS lookups:
+.PP
+.RS
+lan-scan --network 10.0.0.0/24 --no-dns
+.RE
+.PP
+Also try common TCP ports for hosts that filter ICMP, and emit JSON:
+.PP
+.RS
+lan-scan --ports 22,80,443 --json
+.RE
+.SH SEE ALSO
+.BR ssh-selector (1)

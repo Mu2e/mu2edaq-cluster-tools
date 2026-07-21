@@ -227,6 +227,30 @@ The progam checks the kerberos cache for active tickets on startup.  The right p
 
 Press `r` to renew the ticket principal via `kinit -R`. Tickets refresh automatically every 60 seconds.
 
+## LAN scanning
+
+`lan-scan` is a standalone companion utility (installed alongside `ssh-selector`) that probes the local network and reports which hosts respond, with their DNS name and IP address:
+
+```bash
+lan-scan                              # auto-detect the local subnet and scan it
+lan-scan --network 192.168.1.0/24     # scan a specific subnet
+lan-scan --ports 22,80,443            # also try these TCP ports for hosts that filter ICMP ping
+lan-scan --no-dns --json              # skip reverse DNS, emit JSON instead of a table
+```
+
+Example output:
+
+```
+IP Address     DNS Name
+------------------------------
+192.168.1.1    router.lan
+192.168.1.42   nas.lan
+
+2 host(s) found.
+```
+
+Defaults (network, timeout, worker count, fallback ports) can be set in a YAML file passed via `--config` — see `config/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, and `LAN_SCAN_PORTS` environment variables. See `man/lan-scan.1` (`man ./man/lan-scan.1`) for full option details.
+
 ## Other Stuff
 
 Need more features?  Sure let me know. -AJN

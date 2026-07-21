@@ -35,13 +35,14 @@ dev = [
 
 [project.scripts]
 ssh-selector = "ssh_selector:main"
+lan-scan = "lan_scan:main"
 
 [project.urls]
 Homepage = "https://github.com/Mu2e/mu2edaq-cluster-tools"
 Repository = "https://github.com/Mu2e/mu2edaq-cluster-tools"
 
 [tool.setuptools]
-py-modules = ["ssh_selector"]
+py-modules = ["ssh_selector", "lan_scan"]
 
 [tool.setuptools.dynamic]
 version = { attr = "ssh_selector.__version__" }
