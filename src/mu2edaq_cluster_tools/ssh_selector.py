@@ -543,6 +543,7 @@ class AboutModal(ModalScreen):
             yield Static(
                 "A keyboard-driven interface for managing SSH connections\n"
                 "to Fermilab DAQ and Offline Clusters.\n\n"
+                f"[dim]Version :[/dim]  {__version__}\n"
                 "[dim]Author  :[/dim]  Andrew J. Norman\n"
                 "[dim]Email   :[/dim]  anorman@fnal.gov\n"
                 "[dim]Repo    :[/dim]  github.com/Mu2e/mu2edaq-cluster-tools\n"
