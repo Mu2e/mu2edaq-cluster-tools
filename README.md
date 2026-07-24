@@ -104,6 +104,19 @@ ssh-selector
 
 Kerberos support on Windows is limited — it works within WSL and from PowerShell if Kerberos is configured, but MIT Kerberos for Windows has compatibility issues with some terminal emulators.
 
+### Running the tests
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+`pytest.ini` puts `src/` on the import path, so the tests run against an
+uninstalled checkout. If you have also done an editable install
+(`pip install -e .[dev]`), that installed copy is used instead — both work.
+
 ## Usage
 
 If you installed with `pip` (or the install script), use the `ssh-selector` command:
