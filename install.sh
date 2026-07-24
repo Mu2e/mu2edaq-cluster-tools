@@ -5,6 +5,7 @@
 # Usage:
 #   ./install.sh              # install with defaults
 #   ./install.sh --uninstall  # remove everything this script installed
+#   ./install.sh --version    # print the package version and exit
 
 set -euo pipefail
 
@@ -26,6 +27,18 @@ info()    { echo "  $*"; }
 success() { echo "✓ $*"; }
 warn()    { echo "! $*" >&2; }
 die()     { echo "Error: $*" >&2; exit 1; }
+version() {
+    sed -n 's/^__version__ = "\(.*\)"/\1/p' \
+        "${SCRIPT_DIR}/src/mu2edaq_cluster_tools/ssh_selector.py"
+}
+
+# ---------------------------------------------------------------------------
+# Version
+# ---------------------------------------------------------------------------
+if [[ "${1:-}" == "--version" ]]; then
+    echo "mu2edaq-cluster-tools $(version)"
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Uninstall

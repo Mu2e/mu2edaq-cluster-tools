@@ -6,16 +6,24 @@
 # For a system-wide install (a `ssh-selector` launcher on PATH), use
 # ./install.sh instead.
 #
-# Usage: ./bootstrap.sh [--dev]
+# Usage: ./bootstrap.sh [--dev] [--version] [-h|--help]
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV="$HERE/venv"
 DEV=0
 
+version() {
+    sed -n 's/^__version__ = "\(.*\)"/\1/p' \
+        "$HERE/src/mu2edaq_cluster_tools/ssh_selector.py"
+}
+
 for arg in "$@"; do
     case "$arg" in
         --dev) DEV=1 ;;
+        --version)
+            echo "mu2edaq-cluster-tools $(version)"
+            exit 0 ;;
         -h|--help)
             grep '^#' "$0" | sed 's/^# \{0,1\}//'
             exit 0 ;;
