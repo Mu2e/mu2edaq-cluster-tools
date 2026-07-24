@@ -50,14 +50,14 @@ groups:
   Farm FarDet:
     proxy_jump: novadaq-far-gateway-01.fnal.gov
     users:
-      - default
+#      - default
       - novadaq
       - novaraw
       - novadcs
   Farm NearDet:
     proxy_jump: novadaq-near-gateway-01.fnal.gov
     users:
-      - default
+#      - default
       - novadaq
       - novaraw
       - novadcs
