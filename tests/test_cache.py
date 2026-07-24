@@ -4,7 +4,7 @@ import time
 
 import pytest
 
-from ssh_selector import Config, Host, SSHSelector
+from mu2edaq_cluster_tools.ssh_selector import Config, Host, SSHSelector
 
 
 # ---------------------------------------------------------------------------

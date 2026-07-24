@@ -5,7 +5,7 @@ import getpass
 
 import pytest
 
-from ssh_selector import (
+from mu2edaq_cluster_tools.ssh_selector import (
     CURRENT_USER,
     _format_age,
     _parse_users,

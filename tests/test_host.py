@@ -2,7 +2,7 @@
 
 import pytest
 
-from ssh_selector import CURRENT_USER, Host
+from mu2edaq_cluster_tools.ssh_selector import CURRENT_USER, Host
 
 
 # ---------------------------------------------------------------------------

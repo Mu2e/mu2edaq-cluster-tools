@@ -89,11 +89,17 @@ To uninstall:
 
 ### Manual installation
 
-If you prefer to manage the environment yourself, Python 3.9+ is required along with the packages listed in `requirements.txt`:
+If you prefer to manage the environment yourself, Python 3.9+ is required. The
+runtime dependencies are listed in `requirements.txt`, but the console scripts
+(`ssh-selector`, `lan-scan`) only exist once the package itself is installed,
+since the source lives under `src/mu2edaq_cluster_tools/`:
 
 ```bash
+python3 -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
-python ssh_selector.py
+pip install -e .          # installs the ssh-selector / lan-scan console scripts
+ssh-selector
 ```
 
 Kerberos support on Windows is limited — it works within WSL and from PowerShell if Kerberos is configured, but MIT Kerberos for Windows has compatibility issues with some terminal emulators.
@@ -113,12 +119,16 @@ ssh-selector -c path/to/hosts.yaml
 ssh-selector --version
 ```
 
-Running straight from a source checkout works too:
+Running straight from a source checkout works too, once the package is
+installed (editable installs via `pip install -e .` pick up code changes
+without reinstalling):
 
 ```bash
-python ssh_selector.py
-python ssh_selector.py -c path/to/hosts.yaml
+ssh-selector
+ssh-selector -c path/to/hosts.yaml
 ```
+
+See `man/ssh-selector.1` (`man ./man/ssh-selector.1`) for full option and key-binding details.
 
 ### Key bindings
 

@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ssh_selector import _detect_local_networks_sync
+from mu2edaq_cluster_tools.ssh_selector import _detect_local_networks_sync
 
 
 # Typical `ip addr show` output (Linux)

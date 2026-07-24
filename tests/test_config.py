@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ssh_selector import CURRENT_USER, Config, Host, load_config, find_config_files
+from mu2edaq_cluster_tools.ssh_selector import CURRENT_USER, Config, Host, load_config, find_config_files
 
 
 # ---------------------------------------------------------------------------

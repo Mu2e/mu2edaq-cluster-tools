@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from lan_scan import (
+from mu2edaq_cluster_tools.lan_scan import (
     ScanResult,
     detect_local_networks,
     parse_ports,
@@ -171,8 +171,8 @@ class TestScanNetwork:
         def fake_ping(ip, timeout):
             return ip == "192.168.1.1"
 
-        with patch("lan_scan.ping", side_effect=fake_ping), \
-             patch("lan_scan.reverse_dns", return_value="host1.example.com"):
+        with patch("mu2edaq_cluster_tools.lan_scan.ping", side_effect=fake_ping), \
+             patch("mu2edaq_cluster_tools.lan_scan.reverse_dns", return_value="host1.example.com"):
             results = scan_network(network, timeout=1.0, workers=4, ports=[], resolve_dns=True)
 
         assert len(results) == 1
@@ -180,8 +180,8 @@ class TestScanNetwork:
 
     def test_no_dns_skips_lookup(self):
         network = ipaddress.IPv4Network("192.168.1.0/30")
-        with patch("lan_scan.ping", return_value=True), \
-             patch("lan_scan.reverse_dns") as mock_dns:
+        with patch("mu2edaq_cluster_tools.lan_scan.ping", return_value=True), \
+             patch("mu2edaq_cluster_tools.lan_scan.reverse_dns") as mock_dns:
             results = scan_network(network, timeout=1.0, workers=4, ports=[], resolve_dns=False)
 
         mock_dns.assert_not_called()
@@ -189,9 +189,9 @@ class TestScanNetwork:
 
     def test_tcp_fallback_used_when_ping_fails(self):
         network = ipaddress.IPv4Network("192.168.1.0/30")
-        with patch("lan_scan.ping", return_value=False), \
-             patch("lan_scan.tcp_probe", return_value=True), \
-             patch("lan_scan.reverse_dns", return_value=None):
+        with patch("mu2edaq_cluster_tools.lan_scan.ping", return_value=False), \
+             patch("mu2edaq_cluster_tools.lan_scan.tcp_probe", return_value=True), \
+             patch("mu2edaq_cluster_tools.lan_scan.reverse_dns", return_value=None):
             results = scan_network(network, timeout=1.0, workers=4, ports=[22], resolve_dns=True)
 
         assert len(results) == 2

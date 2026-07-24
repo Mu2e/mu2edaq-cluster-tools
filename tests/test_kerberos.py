@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from ssh_selector import _format_klist, _parse_klist_date
+from mu2edaq_cluster_tools.ssh_selector import _format_klist, _parse_klist_date
 from tests.conftest import KLIST_EMPTY, KLIST_EXPIRED, KLIST_LINUX, KLIST_MACOS
 
 
@@ -63,7 +63,7 @@ _FIXED_NOW = datetime(2026, 4, 1, 12, 0, 0)   # noon; tickets expire Apr 2 → ~
 
 class TestFormatKlist:
     def _fmt(self, klist_output: str) -> str:
-        with patch("ssh_selector.datetime") as mock_dt:
+        with patch("mu2edaq_cluster_tools.ssh_selector.datetime") as mock_dt:
             mock_dt.now.return_value = _FIXED_NOW
             mock_dt.strptime.side_effect = datetime.strptime
             return _format_klist(klist_output)

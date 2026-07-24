@@ -1,0 +1,109 @@
+.TH SSH-SELECTOR 1 "2026-07-24" "mu2edaq-cluster-tools" "User Commands"
+.SH NAME
+ssh-selector \- keyboard-driven terminal UI for picking and connecting to SSH hosts
+.SH SYNOPSIS
+.B ssh-selector
+[\fB\-c\fR \fIFILE\fR]
+.br
+.B ssh-selector
+\fB\-\-version\fR
+.SH DESCRIPTION
+.B ssh-selector
+is a Textual-based terminal UI for navigating a fleet of remote hosts
+defined in a YAML configuration file. Hosts are organized into named,
+searchable groups; each host may offer several login users, a fixed
+SSH port, and an optional ProxyJump gateway. Selecting a host opens an
+interactive SSH session, a new terminal window, or an SSH port-forward
+tunnel.
+.PP
+While running, the right-hand panel shows connection details for the
+highlighted host, active Kerberos tickets with expiry countdowns, the
+local network identity, and any background tunnels that have been
+opened.
+.PP
+If the destination host's resolved IP address falls within a locally
+detected subnet, a configured ProxyJump is automatically skipped since
+the gateway is not needed to reach it directly.
+.SH OPTIONS
+.TP
+\fB\-c\fR, \fB\-\-config\fR \fIFILE\fR
+Path to a YAML configuration file. Skips config-file auto-discovery
+when given.
+.TP
+\fB\-\-version\fR
+Print the version number and exit.
+.SH CONFIG FILE DISCOVERY
+When \fB\-c\fR is not given, configuration files are searched for in
+this order:
+.IP 1. 4
+\fB*.yaml\fR files in the current directory
+.IP 2. 4
+\fB*.yaml\fR files in \fB./config/\fR
+.PP
+If exactly one file is found it is loaded automatically. If several
+are found, a selection screen lists them for you to pick from. If
+none are found, run with \fB\-c\fR to point at one explicitly. See
+\fIconfig/hosts.yaml.example\fR for a fully annotated example
+configuration.
+.SH KEY BINDINGS
+.TP
+.B Enter
+Connect to the selected host in the current terminal.
+.TP
+.B n
+Connect to the selected host in a new terminal window.
+.TP
+.B t
+Open an SSH port-forward tunnel to the selected host; prompts for a
+local port, a remote port, and whether to run the tunnel in the
+background.
+.TP
+.B c
+Check how many users are logged in on every host (via a non-interactive
+\fBwho\fR over SSH) and display the count next to each nickname.
+.TP
+.B /
+Focus the search field to filter the host list by nickname or hostname.
+.TP
+.B r
+Renew the current Kerberos ticket principal via \fBkinit \-R\fR.
+.TP
+.B A
+Show the About screen.
+.TP
+.B q
+Quit.
+.TP
+.B Left / Right arrows
+Switch the selected host between the two columns of a paired row.
+.TP
+.B Escape
+Clear the search field and return focus to the host list, or dismiss
+the active modal; quits if pressed with no search text and no modal
+open.
+.PP
+In the tunnels panel, \fBk\fR or \fBDelete\fR terminates the
+highlighted background tunnel.
+.SH FILES
+.TP
+.I config/hosts.yaml.example
+Fully annotated example host configuration.
+.TP
+.I ./*.yaml, ./config/*.yaml
+Auto-discovered configuration files (see CONFIG FILE DISCOVERY above).
+.SH EXIT STATUS
+.TP
+.B 0
+Normal exit, including the user quitting the host selector or the
+config-file picker.
+.TP
+.B 1
+No configuration file was found (or the one given with \fB\-c\fR does
+not exist), the configuration failed to parse, or it defines no hosts.
+.SH KERBEROS SUPPORT
+Kerberos ticket support relies on \fBklist\fR and \fBkinit\fR being
+available on \fBPATH\fR. Support on Windows is limited: it works within
+WSL and from PowerShell when Kerberos is configured, but MIT Kerberos
+for Windows has compatibility issues with some terminal emulators.
+.SH SEE ALSO
+.BR lan-scan (1)
