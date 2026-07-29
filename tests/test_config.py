@@ -292,8 +292,13 @@ class TestFindConfigFiles:
     def test_deduplication_of_same_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         (tmp_path / "hosts.yaml").touch()
-        # Symlink config/ -> . so the same file appears in both search paths
-        (tmp_path / "config").symlink_to(tmp_path)
+        # Symlink config/ -> . so the same file appears in both search paths.
+        # Creating a symlink on Windows needs elevation/Developer Mode; skip the
+        # dedup check there rather than fail on a permissions limitation.
+        try:
+            (tmp_path / "config").symlink_to(tmp_path)
+        except OSError as exc:
+            pytest.skip(f"cannot create symlink on this platform: {exc}")
         found = find_config_files()
         names = [p.name for p in found]
         assert names.count("hosts.yaml") == 1
