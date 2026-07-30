@@ -363,6 +363,32 @@ def _detect_local_networks_sync() -> list[ipaddress.IPv4Network]:
                 )
             except (ValueError, OSError):
                 pass
+        if networks:
+            return networks
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    # Windows fallback: ipconfig -> paired "IPv4 Address" / "Subnet Mask" lines
+    # (mirrors lan_scan.local_networks(); neither `ip` nor `ifconfig` exists on
+    # a stock Windows host, so without this auto-detection returned nothing).
+    try:
+        out = subprocess.check_output(
+            ["ipconfig"], stderr=subprocess.DEVNULL, text=True
+        )
+        pending_ip = None
+        for line in out.splitlines():
+            ip_m = re.search(r"IPv4 Address[.\s]*:\s*([\d.]+)", line)
+            mask_m = re.search(r"Subnet Mask[.\s]*:\s*([\d.]+)", line)
+            if ip_m:
+                pending_ip = ip_m.group(1)
+            elif mask_m and pending_ip:
+                try:
+                    networks.append(
+                        ipaddress.IPv4Interface(f"{pending_ip}/{mask_m.group(1)}").network
+                    )
+                except ValueError:
+                    pass
+                pending_ip = None
     except (FileNotFoundError, subprocess.CalledProcessError):
         pass
 
