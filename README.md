@@ -141,7 +141,7 @@ ssh-selector
 ssh-selector -c path/to/hosts.yaml
 ```
 
-See `man/ssh-selector.1` (`man ./man/ssh-selector.1`) for full option and key-binding details.
+See `man/man1/ssh-selector.1` (`man ./man/man1/ssh-selector.1`) for full option and key-binding details.
 
 ### Key bindings
 
@@ -272,7 +272,7 @@ IP Address     DNS Name
 2 host(s) found.
 ```
 
-Defaults (network, timeout, worker count, fallback ports) can be set in a YAML file passed via `--config` — see `config/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, and `LAN_SCAN_PORTS` environment variables. See `man/lan-scan.1` (`man ./man/lan-scan.1`) for full option details.
+Defaults (network, timeout, worker count, fallback ports) can be set in a YAML file passed via `--config` — see `config/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, and `LAN_SCAN_PORTS` environment variables. See `man/man1/lan-scan.1` (`man ./man/man1/lan-scan.1`) for full option details.
 
 ## Other Stuff
 

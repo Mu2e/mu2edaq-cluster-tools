@@ -1,0 +1,262 @@
+.TH LAN\-SCAN 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.SH NAME
+lan\-scan \- probe the local LAN and list responding hosts
+.SH SYNOPSIS
+.B lan\-scan
+.RB [ \-n
+.IR CIDR ]
+.RB [ \-c
+.IR FILE ]
+.RB [ \-t
+.IR SECONDS ]
+.RB [ \-w
+.IR COUNT ]
+.RB [ \-p
+.IR LIST ]
+.RB [ \-\-no\-dns ]
+.RB [ \-\-json ]
+.br
+.B lan\-scan
+.BR \-\-version | \-h
+.SH DESCRIPTION
+.B lan-scan
+discovers hosts on the local network by sending an ICMP ping (and,
+optionally, TCP connect probes) to every address in a subnet, then
+prints a table of the hosts that responded along with their reverse-DNS
+name and IP address. Progress
+.RB ( "Scanning <cidr> (<n> addresses)..." )
+and notes go to standard error; results go to standard output.
+.PP
+If no network is given, the local IPv4 network(s) are auto-detected from
+the host's network interfaces (\fBip addr\fR on Linux, \fBifconfig\fR on
+macOS/BSD, \fBipconfig\fR on Windows). Loopback networks are dropped and
+the
+.I first
+remaining network is scanned; when there are several, the others are named
+on standard error. On a multi-homed DAQ node that may not be the network you
+meant \(em give
+.B \-\-network
+explicitly.
+.SH PROBES AND SAFETY
+For every host address in the network
+.RB ( ipaddress.hosts() ,
+i.e. excluding the network and broadcast addresses of anything larger than
+a /31), one worker thread:
+.IP 1. 4
+runs the system
+.BR ping (8)
+once
+.RB ( "ping \-c 1 \-W" " \fItimeout\fR\-in\-milliseconds" ;
+.B ping \-n 1 \-w
+on Windows) as a subprocess, killed after
+.IR timeout +1
+seconds;
+.IP 2. 4
+only if the ping failed and
+.B \-\-ports
+is set, attempts a full TCP connect to each listed port in turn, closing the
+connection as soon as one succeeds;
+.IP 3. 4
+only for a responder, and unless
+.BR \-\-no\-dns ,
+does one reverse lookup with
+.BR gethostbyaddr (3).
+.PP
+Up to
+.B \-\-workers
+(default 64) addresses are probed concurrently. There is no rate limit, no
+inter-probe delay, no confirmation and no upper bound on the network size:
+the whole address list is built in memory before the first probe, so a
+mistyped
+.B /16
+runs 65534 ping processes, 64 at a time, and a
+.B /8
+about 16.7 million.
+With the default timeout a silent address holds its worker for about 2 s on
+Linux (see BUGS), so a /24 with few responders takes about 8 s and a /16
+about 35 minutes. Nothing is sent other than the ICMP echo, the TCP SYN
+(and handshake) and the DNS query; no payload is written to an open port.
+.PP
+Scanning address space you do not administer \(em including Fermilab
+networks outside the DAQ enclave \(em may be treated as hostile by the site's
+intrusion detection. The shipped
+.I config/lan_scan\-mu2edaq.yaml
+targets
+.BR 131.225.245.0/24 ,
+a routable Fermilab subnet.
+.SH OPTIONS
+.TP
+\fB\-n\fR, \fB\-\-network\fR \fICIDR\fR
+Network to scan, e.g. \fB192.168.1.0/24\fR. Default: auto-detect.
+.TP
+\fB\-c\fR, \fB\-\-config\fR \fIFILE\fR
+YAML configuration file supplying defaults for any of the options below.
+See \fIconfig/lan_scan.yaml.example\fR.
+.TP
+\fB\-t\fR, \fB\-\-timeout\fR \fISECONDS\fR
+Per-host probe timeout. Default: 1.0. Applied to the ping, to each TCP
+connect, and (nominally) to the DNS lookup. On Linux the effective ping
+limit is
+.IR SECONDS +1;
+see
+.BR BUGS .
+.TP
+\fB\-w\fR, \fB\-\-workers\fR \fICOUNT\fR
+Number of concurrent probe threads. Default: 64.
+.TP
+\fB\-p\fR, \fB\-\-ports\fR \fILIST\fR
+Comma-separated TCP ports to try (e.g. \fB22,80,443\fR) if a host does
+not answer ICMP ping, such as one behind a firewall that filters it.
+.TP
+\fB\-\-no\-dns\fR
+Skip reverse DNS lookups; report IP addresses only. Faster on large
+subnets. There is no option to turn lookups back on when the configuration
+file sets
+.BR "no_dns: true" ,
+and no environment variable for it.
+.TP
+\fB\-\-json\fR
+Print results as a JSON array of
+.B {"ip": ..., "hostname": ...}
+objects instead of a table.
+.TP
+\fB\-h\fR, \fB\-\-help\fR
+Show help and exit.
+.TP
+\fB\-\-version\fR
+Print the version number and exit. This prints
+.BR 1.0.0 ,
+from
+.IR lan_scan.py ;
+the installed package is 1.0.1. See
+.BR BUGS .
+.SH CONFIGURATION PRECEDENCE
+For every option, the effective value is chosen in this order:
+commandline flag, then environment variable, then the \fB\-\-config\fR
+YAML file, then the built-in default. The configuration file is read only
+when
+.B \-\-config
+is given; there is no default path and no environment variable for it.
+Recognised keys are
+.BR network ,
+.BR timeout ,
+.BR workers ,
+.B ports
+(list or comma-separated string) and
+.BR no_dns .
+.SH FILES
+.TP
+.I config/lan_scan\-mu2edaq.yaml
+Shipped scan profile:
+.BR 131.225.245.0/24 ,
+ports 22, 80, 443.
+.TP
+.I config/lan_scan\-mu2edaq\-data.yaml
+Shipped scan profile:
+.BR 10.226.9.0/24 ,
+ports 22, 80, 443.
+.TP
+.I config/lan_scan\-mu2edaq\-ipmi.yaml
+Shipped scan profile:
+.BR 192.168.246.0/24 ,
+ports 22, 80, 443.
+.TP
+.I config/lan_scan.yaml.example
+Annotated template for a new scan profile.
+.SH ENVIRONMENT
+.TP
+.B LAN_SCAN_NETWORK
+Overrides the network to scan (same syntax as \fB\-\-network\fR).
+.TP
+.B LAN_SCAN_TIMEOUT
+Overrides the per-host probe timeout in seconds.
+.TP
+.B LAN_SCAN_WORKERS
+Overrides the number of concurrent probe threads.
+.TP
+.B LAN_SCAN_PORTS
+Overrides the TCP fallback port list (same syntax as \fB\-\-ports\fR).
+.SH EXIT STATUS
+.TP
+.B 0
+Scan completed (regardless of how many hosts responded).
+.TP
+.B 1
+Could not auto-detect a local network and none was given.
+.TP
+.B 2
+The network given via \fB\-\-network\fR, an environment variable, or the
+config file was not a valid CIDR; or a command-line usage error.
+.PP
+A missing or unreadable
+.B \-\-config
+file, a non-numeric timeout or worker count from the environment or the
+config file, a non-numeric entry in a port list from any source, or a worker
+count below 1, ends in a Python traceback with status 1.
+A non-numeric
+.B \-t
+or
+.B \-w
+on the command line is an argparse error, status 2.
+.SH EXAMPLES
+Scan the auto-detected local subnet:
+.PP
+.RS
+.B lan\-scan
+.RE
+.PP
+Scan a specific subnet, skipping DNS lookups:
+.PP
+.RS
+.B lan\-scan \-\-network 10.0.0.0/24 \-\-no\-dns
+.RE
+.PP
+Also try common TCP ports for hosts that filter ICMP, and emit JSON:
+.PP
+.RS
+.B lan\-scan \-\-ports 22,80,443 \-\-json
+.RE
+.PP
+Use a shipped profile, with a gentler concurrency:
+.PP
+.RS
+.B lan\-scan \-c config/lan_scan\-mu2edaq\-data.yaml \-w 16
+.RE
+.SH BUGS
+On Linux,
+.B ping \-W
+takes seconds (iputils), but the value passed is milliseconds, so
+.B \-W 1000
+asks for a 1000 s wait; the subprocess timeout of
+.IR timeout +1
+seconds is what actually ends the probe. macOS
+.B ping \-W
+takes milliseconds and is correct.
+.PP
+The DNS timeout is applied with
+.BR socket.setdefaulttimeout ,
+which does not bound
+.BR gethostbyaddr (3)
+and is process-global across the worker threads.
+.PP
+.B \-\-version
+reports 1.0.0 while the package metadata is 1.0.1.
+.PP
+Importing the
+.B lan_scan
+module runs the package's
+.IR __init__.py ,
+which imports
+.B ssh_selector
+and therefore Textual, although
+.B lan\-scan
+does not use it.
+.PP
+See
+.I docs/ISSUES\-PENDING.md
+in the source tree.
+.SH SEE ALSO
+.BR ssh\-selector (1),
+.BR ping (8)
+.SH AUTHOR
+Andrew Norman, Mu2e DAQ Group, Fermi National Accelerator Laboratory.

@@ -1,0 +1,90 @@
+.TH BOOTSTRAP.SH 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.SH NAME
+bootstrap.sh \- create the mu2edaq-cluster-tools development venv
+.SH SYNOPSIS
+.B ./bootstrap.sh
+.RB [ \-\-dev ]
+.br
+.B ./bootstrap.sh
+.BR \-\-version | \-h
+.SH DESCRIPTION
+Creates
+.I venv/
+in the checkout with
+.B $PYTHON
+(default
+.BR python3 ,
+3.9 or newer) if it does not exist, activates it, upgrades pip, and installs
+the package with its
+.I dev
+extra (pytest) so that
+.B ssh\-selector
+and
+.B lan\-scan
+are on the venv's
+.BR PATH .
+.PP
+The package spec is
+.B .[dev]
+relative to the
+.I current
+directory, not the script's, so run the script from the checkout.
+For a per-user install with launchers on
+.BR PATH ,
+use
+.BR install.sh (1).
+.SH OPTIONS
+.TP
+.B \-\-dev
+Install in editable mode
+.RB ( "pip install \-e" ).
+Without it the install is a regular copy.
+The
+.I dev
+extra is installed either way.
+.TP
+.B \-\-version
+Print
+.B mu2edaq\-cluster\-tools
+.I version
+(read from
+.IR src/mu2edaq_cluster_tools/ssh_selector.py )
+and exit.
+.TP
+.BR \-h ", " \-\-help
+Print the script's header comment and exit.
+.SH FILES
+.TP
+.I venv/
+The virtual environment, POSIX layout
+.RI ( venv/bin/activate ).
+.SH ENVIRONMENT
+.TP
+.B PYTHON
+Interpreter used to create the venv.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+No usable Python 3.9+, or a failing venv or pip step
+.RB ( "set \-e" ).
+.TP
+.B 2
+Unknown option.
+.SH EXAMPLES
+.RS
+.nf
+cd mu2edaq\-cluster\-tools
+\&./bootstrap.sh \-\-dev
+source venv/bin/activate
+pytest
+.fi
+.RE
+.SH SEE ALSO
+.BR install.sh (1),
+.BR ssh\-selector (1),
+.BR lan\-scan (1)
+.SH AUTHOR
+Andrew Norman, Mu2e DAQ Group, Fermi National Accelerator Laboratory.
