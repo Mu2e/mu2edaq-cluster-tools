@@ -1865,19 +1865,42 @@ INSTALL_MARKER = ".mu2edaq-cluster-tools-install"
 
 
 def user_config_dir() -> Path:
-    """Per-user host file directory: $XDG_CONFIG_HOME (or ~/.config)/mu2edaq/cluster-tools."""
+    """!
+    @brief Per-user host file directory: $XDG_CONFIG_HOME (or ~/.config)/mu2edaq/cluster-tools.
+
+    Follows the XDG Base Directory convention so operators' host lists live
+    beside their other tool configuration and survive reinstalls of the
+    package. An empty XDG_CONFIG_HOME is treated as unset, as the XDG
+    specification requires.
+
+    @return the directory path; it is not created and may not exist.
+    @note The same path is used on macOS and Windows (under the user's
+          home directory) rather than the platform-native locations, so that
+          one set of instructions works for every operator workstation.
+    """
     base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
     return Path(base) / "mu2edaq" / "cluster-tools"
 
 
 def install_dir() -> Optional[Path]:
-    """Return the install.sh install directory, or None if not running from one.
+    """!
+    @brief Return the install.sh install directory, or None if not running from one.
 
     $MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR wins; otherwise the parent of the running
     venv (sys.prefix) counts only if it carries the install.sh marker file.
+
+    install.sh creates its venv directly inside the install directory, so
+    the venv's parent is the install root. The marker check stops a
+    developer venv (or a system Python, whose prefix parent is e.g. /usr)
+    from being mistaken for an install and its config/ being searched.
+
+    @return the install root, or None for pip/editable installs.
+    @see INSTALL_MARKER, INSTALL_DIR_ENV_VAR
     """
     env = os.environ.get(INSTALL_DIR_ENV_VAR)
     if env:
+        # Trusted as given (no marker check): the operator or the install.sh
+        # wrapper set it deliberately, e.g. for a relocated install.
         return Path(env).expanduser()
     candidate = Path(sys.prefix).parent
     if (candidate / INSTALL_MARKER).is_file():
@@ -1886,7 +1909,22 @@ def install_dir() -> Optional[Path]:
 
 
 def config_search_tiers() -> list[list[Path]]:
-    """Directories searched for host files, as precedence tiers (highest first)."""
+    """!
+    @brief Directories searched for host files, as precedence tiers (highest first).
+
+    Tier order, most specific first:
+      1. `.` and `./config` (merged into one tier): a checkout or a working
+         directory with its own host list overrides everything.
+      2. user_config_dir(): the operator's personal host lists.
+      3. install_dir()/config: site defaults shipped by install.sh; present
+         only when running from an install.sh install.
+
+    Relative paths are kept relative so messages show them as the operator
+    typed them; they are resolved against the current working directory.
+
+    @return a list of tiers, each a list of directories (which may not exist).
+    @see find_config_files() for how the tiers are consumed.
+    """
     tiers = [[Path("."), Path("config")], [user_config_dir()]]
     inst = install_dir()
     if inst is not None:
@@ -1895,16 +1933,29 @@ def config_search_tiers() -> list[list[Path]]:
 
 
 def find_config_files() -> list[Path]:
-    """Return the *.yaml host files of the first search tier that has any.
+    """!
+    @brief Return the *.yaml host files of the first search tier that has any.
 
     Tiers, in order: ./ and ./config/ (merged); the per-user config directory;
     the install directory's config/. Files are deduplicated by real path.
+
+    First-tier-wins (rather than merging all tiers) means a local host list
+    fully replaces the site defaults instead of being mixed with them, so
+    the selection screen never offers a stale site file next to a local one.
+
+    @return the host files found, sorted by name within each directory;
+            an empty list if no tier contains any.
+    @note Only the `.yaml` suffix is matched; `.yml` files are ignored.
     """
+    # Shared across tiers so a file reachable twice (e.g. the CWD is the
+    # install's config directory, or a symlink) is listed only once.
     seen: set[Path] = set()
     for tier in config_search_tiers():
         found: list[Path] = []
         for d in tier:
             if d.is_dir():
+                # sorted() makes the selection list order stable across runs
+                # and filesystems (glob order is directory order).
                 for p in sorted(d.glob("*.yaml")):
                     resolved = p.resolve()
                     if resolved not in seen:
@@ -1916,10 +1967,20 @@ def find_config_files() -> list[Path]:
 
 
 def explicit_config_path(cli_value: Optional[str]) -> tuple[Optional[Path], str]:
-    """Return (path, source) for a host file named by -c or $SSH_SELECTOR_CONFIG.
+    """!
+    @brief Return (path, source) for a host file named by -c or $SSH_SELECTOR_CONFIG.
 
     -c takes precedence over the environment; (None, "") means neither was given
     and discovery should run.
+
+    An empty `-c ""` or an empty environment variable counts as "not given",
+    so an exported-but-blank variable does not break discovery.
+
+    @param cli_value  Value of `-c/--config`, or None.
+    @return (path, source) where source is "-c" or the environment variable
+            name, used in error messages so the operator knows which setting
+            pointed at a missing file.
+    @note The path is not checked for existence here; main() does that.
     """
     if cli_value:
         return Path(cli_value).expanduser(), "-c"
@@ -1930,19 +1991,46 @@ def explicit_config_path(cli_value: Optional[str]) -> tuple[Optional[Path], str]
 
 
 class ConfigItem(ListItem):
-    """List item wrapping a config file Path."""
+    """!
+    @brief List item wrapping a config file Path.
+
+    Carries the Path so ConfigSelectApp can return it directly from the
+    selection event without mapping a list index back to a file.
+    """
 
     def __init__(self, path: Path) -> None:
+        """!
+        @brief Create an item for one candidate host file.
+        @param path  Host file shown and returned on selection.
+        """
         super().__init__()
         self.path = path
 
     def compose(self) -> ComposeResult:
+        """!
+        @brief Build the item's label showing the file path.
+        @return the child widgets (a single Label).
+        @warning The body refers to the bare name `path` rather than
+                 `self.path`; no module-level `path` exists, so composing an
+                 item would raise NameError. Recorded here as a finding;
+                 this documentation change does not alter code.
+        """
         yield Label(str(path))
 
 
 class ConfigSelectApp(App[Optional[Path]]):
-    """Pre-flight TUI for picking a config file when multiple are found."""
+    """!
+    @brief Pre-flight TUI for picking a config file when multiple are found.
 
+    Runs before the main SSHSelector app, as a separate Textual App, because
+    the host list (and so the main app's state) depends on the choice. The
+    app's return value is the chosen Path, or None if the user quit with
+    `q`; main() turns None into a clean exit with status 0.
+
+    Runs on the main thread; all methods are Textual event handlers.
+    """
+
+    # Textual CSS: a single bordered list filling the screen.
     CSS = """
     Screen {
         layout: vertical;
@@ -1980,10 +2068,18 @@ class ConfigSelectApp(App[Optional[Path]]):
     ]
 
     def __init__(self, paths: list[Path]) -> None:
+        """!
+        @brief Create the selector.
+        @param paths  Candidate host files from find_config_files(), in display order.
+        """
         super().__init__()
         self.paths = paths
 
     def compose(self) -> ComposeResult:
+        """!
+        @brief Build the header, title, file list and footer.
+        @return the widget tree.
+        """
         yield Header(show_clock=True)
         with Container(id="config-select-container"):
             yield Label("Multiple config files found — select one:", id="config-select-title")
@@ -1991,9 +2087,18 @@ class ConfigSelectApp(App[Optional[Path]]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """!
+        @brief Focus the list so arrow keys and Enter work immediately.
+        """
         self.query_one("#config-list", ListView).focus()
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
+        """!
+        @brief Exit the app returning the chosen file.
+        @param event  Selection event from the ListView.
+        """
+        # The isinstance guard keeps the handler safe if other item types
+        # are ever added to the list.
         if isinstance(event.item, ConfigItem):
             self.exit(event.item.path)
 
@@ -2006,6 +2111,9 @@ class ConfigSelectApp(App[Optional[Path]]):
 # must take the *remaining argv* as the command (not a single shell string):
 # gnome-terminal "--", xfce4-terminal "-x" ("-e" takes one string),
 # konsole "-e" and xterm "-e" (both consume all following arguments).
+# Passing argv rather than a string avoids a shell round-trip, so host names
+# and options never need quoting and cannot be interpreted by a shell.
+# xterm is last because it is the most widely installed fallback.
 _TERMINAL_CANDIDATES = (
     ("gnome-terminal", "--"),
     ("xfce4-terminal", "-x"),
@@ -2015,10 +2123,17 @@ _TERMINAL_CANDIDATES = (
 
 
 def _terminal_command(cmd: list[str]) -> Optional[list[str]]:
-    """Return the argv that runs *cmd* in a new terminal on Linux/BSD, or None.
+    """!
+    @brief Return the argv that runs *cmd* in a new terminal on Linux/BSD, or None.
 
     Uses shutil.which (no external ``which`` program) to find the first
     installed emulator in _TERMINAL_CANDIDATES.
+
+    @param cmd  Command argv to run inside the terminal (normally ssh ...).
+    @return the full argv (emulator, its exec option, then *cmd*), or None
+            if no candidate emulator is on PATH.
+    @note $TERMINAL and x-terminal-emulator are not consulted; the fixed
+          list guarantees an emulator whose argv convention is known.
     """
     for prefix in _TERMINAL_CANDIDATES:
         if shutil.which(prefix[0]):
@@ -2027,10 +2142,29 @@ def _terminal_command(cmd: list[str]) -> Optional[list[str]]:
 
 
 def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
-    """Launch *cmd* in a new terminal window, returning immediately."""
+    """!
+    @brief Launch *cmd* in a new terminal window, returning immediately.
+
+    The child is not waited for: the selector returns to its host list while
+    the session runs in its own window.
+
+    @param cmd    Command argv (normally from Host.ssh_command()).
+    @param title  Window title; currently unused (no portable way to set it
+                  across all supported terminals), kept for API stability.
+    @note macOS: Terminal.app via osascript `do script`, which runs a shell
+          string, so the argv is shell-quoted with shlex and then escaped
+          for an AppleScript string literal.
+    @note Windows: ssh.exe is started directly in a new console window
+          (CREATE_NEW_CONSOLE); no shell is involved.
+    @note Linux/BSD: the first installed emulator from _TERMINAL_CANDIDATES.
+          If none is found the command is printed for the operator to run.
+    """
     if sys.platform == "darwin":
+        # do script takes one shell command line, so quote each argument
+        # for the shell before embedding.
         ssh_str = " ".join(shlex.quote(c) for c in cmd)
         # AppleScript requires double-quoted strings; escape any embedded double quotes.
+        # Backslashes first, otherwise the escapes added for quotes would be doubled.
         ssh_str_escaped = ssh_str.replace("\\", "\\\\").replace('"', '\\"')
         script = f'tell application "Terminal" to do script "{ssh_str_escaped}"'
         subprocess.Popen(["osascript", "-e", script])
@@ -2038,6 +2172,7 @@ def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
 
     if sys.platform == "win32":
         # A new console window running ssh.exe directly; no shell involved.
+        # getattr keeps the module importable on POSIX, where the flag is absent.
         subprocess.Popen(cmd, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
         return
 
@@ -2047,6 +2182,8 @@ def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
         subprocess.Popen(term_cmd)
         return
 
+    # Headless or minimal desktop: degrade to instructions instead of failing,
+    # so the operator can still connect from another terminal.
     print(f"Warning: no supported terminal emulator found. Run manually:\n  {' '.join(cmd)}")
 
 
@@ -2054,11 +2191,14 @@ def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
 # jump); any other status is the remote command's / login shell's own.
 SSH_ERROR_STATUS = 255
 # Bytes of ssh's stderr kept for the error dialog.
+# 8 KiB holds the full diagnostic of a failed multi-hop connection (ProxyJump
+# errors, host-key warnings) while bounding memory for chatty sessions.
 _STDERR_TAIL_BYTES = 8192
 
 
 def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
-    """Run an interactive *cmd* in the foreground and return (status, error).
+    """!
+    @brief Run an interactive *cmd* in the foreground and return (status, error).
 
     ssh's stderr is forwarded to the terminal as it is produced (warnings,
     banners and host-key messages are seen live), while the last
@@ -2066,12 +2206,29 @@ def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
     SSH_ERROR_STATUS, otherwise "", so a remote shell whose last command
     failed does not raise the "SSH Connection Failed" dialog.  Prompts
     (passwords, host-key confirmation) use /dev/tty and are unaffected.
+
+    stdin and stdout are inherited, so the session is fully interactive;
+    only stderr is teed. The Textual app has already exited at this point,
+    so the terminal is in normal (cooked) mode.
+
+    @param cmd  ssh argv to run.
+    @return (exit status, error text); the error text is non-empty only
+            for status 255 and is shown by SSHErrorModal on the next screen.
+    @throws OSError if the ssh executable cannot be started.
     """
     proc = subprocess.Popen(cmd, stderr=subprocess.PIPE)
     tail = bytearray()
+    # Write raw bytes when possible so ssh's output (any encoding, partial
+    # UTF-8 sequences split across reads) reaches the terminal unchanged.
     out = getattr(sys.stderr, "buffer", None)
 
     def _pump() -> None:
+        """!
+        @brief Copy ssh's stderr to our stderr and keep a bounded tail.
+
+        os.read on the raw fd returns whatever is available instead of
+        waiting for a full buffer, so messages appear immediately.
+        """
         fd = proc.stderr.fileno()
         while True:
             chunk = os.read(fd, 4096)
@@ -2081,15 +2238,19 @@ def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
                 out.write(chunk)
                 out.flush()
             else:
+                # sys.stderr replaced by a text-only stream (e.g. in tests).
                 sys.stderr.write(chunk.decode(errors="replace"))
                 sys.stderr.flush()
             tail.extend(chunk)
             if len(tail) > _STDERR_TAIL_BYTES:
                 del tail[:-_STDERR_TAIL_BYTES]
 
+    # A thread rather than communicate(): communicate() would buffer stderr
+    # until exit, hiding banners and warnings during the session.
     pump = threading.Thread(target=_pump, daemon=True)
     pump.start()
     status = proc.wait()
+    # Join after wait so the tail is complete (EOF follows process exit).
     pump.join()
     proc.stderr.close()
     if status == SSH_ERROR_STATUS:
@@ -2098,12 +2259,34 @@ def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
 
 
 def _install_tunnel_shutdown(tunnels: TunnelRegistry) -> None:
-    """Stop background tunnels on any interpreter exit unless the user kept them."""
+    """!
+    @brief Stop background tunnels on any interpreter exit unless the user kept them.
+
+    Registers TunnelRegistry.shutdown with atexit (normal exit, sys.exit,
+    unhandled exceptions) and installs SIGHUP/SIGTERM handlers that do the
+    same before dying, so closing the terminal window or a `kill` from a
+    session manager does not leave orphaned ssh -L processes holding local
+    ports.
+
+    @param tunnels  Registry shared with every SSHSelector instance.
+    @note SIGHUP does not exist on Windows; the getattr lookup skips it.
+          SIGKILL cannot be caught, so `kill -9` still orphans tunnels.
+    @warning Tunnels the operator chose to keep (keep_on_exit) survive the
+             exit by design and must be stopped manually; see
+             _report_kept_tunnels().
+    """
     atexit.register(tunnels.shutdown)
 
     def _stop_then_resignal(signum: int, _frame: object) -> None:
+        """!
+        @brief Signal handler: stop tunnels, then die from the same signal.
+        @param signum  Signal number received.
+        @param _frame  Interrupted stack frame (unused).
+        """
         # atexit does not run on a fatal signal: stop the tunnels here, then
         # die with the default action exactly as before this handler existed.
+        # Re-raising (rather than sys.exit) keeps the parent-visible status
+        # "killed by signal", which shells and session managers rely on.
         tunnels.shutdown()
         signal.signal(signum, signal.SIG_DFL)
         os.kill(os.getpid(), signum)
@@ -2114,11 +2297,21 @@ def _install_tunnel_shutdown(tunnels: TunnelRegistry) -> None:
             try:
                 signal.signal(sig, _stop_then_resignal)
             except (OSError, ValueError):
+                # ValueError: not on the main thread (e.g. under a test
+                # runner); tunnels are then still covered by atexit.
                 pass
 
 
 def _report_kept_tunnels(tunnels: TunnelRegistry) -> None:
-    """Tell the user which tunnels were left running at quit and how to stop them."""
+    """!
+    @brief Tell the user which tunnels were left running at quit and how to stop them.
+
+    Printed after the TUI has exited, so it stays in the terminal scrollback
+    where the operator can copy the `kill` command.
+
+    @param tunnels  Registry whose live tunnels are reported; nothing is
+                    printed unless keep_on_exit is set and a tunnel is alive.
+    """
     if not tunnels.keep_on_exit:
         return
     live = tunnels.alive()
@@ -2134,6 +2327,44 @@ def _report_kept_tunnels(tunnels: TunnelRegistry) -> None:
 # ---------------------------------------------------------------------------
 
 def main() -> None:
+    """!
+    @brief Entry point of the `ssh-selector` console script.
+
+    Host file selection, highest precedence first:
+      1. `-c/--config FILE`;
+      2. $SSH_SELECTOR_CONFIG (a file);
+      3. discovery (find_config_files()): the first tier holding any
+         *.yaml wins: ./ and ./config/; then
+         $XDG_CONFIG_HOME/mu2edaq/cluster-tools/; then the install.sh
+         install directory's config/. One file is loaded directly; several
+         open ConfigSelectApp.
+
+    The Check Users concurrency limit resolves as commandline
+    (`--check-concurrency`) > environment ($SSH_SELECTOR_CHECK_CONCURRENCY)
+    > YAML `check_concurrency` > DEFAULT_CHECK_CONCURRENCY.
+
+    The function then loops: run SSHSelector, perform the requested action
+    (foreground ssh, new terminal window, or foreground tunnel), and show
+    the selector again. A fresh App instance is created each iteration
+    because a Textual App cannot be run twice; tunnels live in the shared
+    TunnelRegistry so they survive the rebuild.
+
+    Example:
+    @code
+    ssh-selector -c ~/.config/mu2edaq/cluster-tools/daq.yaml --check-concurrency 4
+    @endcode
+
+    @throws SystemExit status 0 when the user quits the selector or the
+            config chooser, or after `--help`/`--version`; status 2 for
+            argparse usage errors; status 1 (message on stderr) when the
+            named config file does not exist, no config file is found, the
+            config cannot be loaded, it defines no hosts, or the
+            check-concurrency value is invalid.
+    @throws OSError if ssh or the terminal launcher cannot be executed.
+    @warning A tunnel started in the foreground holds its local port until
+             Ctrl+C; background tunnels are stopped at exit unless the
+             operator chose to keep them (see _install_tunnel_shutdown()).
+    """
     parser = argparse.ArgumentParser(
         description="SSH Host Selector — pick a host from a YAML list and connect.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -2159,6 +2390,8 @@ Config file selection:
         "--check-concurrency",
         metavar="N",
         type=int,
+        # None (not the real default) so resolve_check_concurrency can tell
+        # "not given" apart and let the environment and config apply.
         default=None,
         help=(
             "Maximum simultaneous ssh connections for Check Users "
@@ -2176,11 +2409,16 @@ Config file selection:
     explicit, source = explicit_config_path(args.config)
     if explicit is not None:
         config_path = explicit
+        # An explicitly named file that is missing is an error, never a cue
+        # to fall back to discovery: silently loading a different host list
+        # could connect the operator to the wrong cluster.
         if not config_path.exists():
             sys.exit(f"Error: config file not found ({source}): {config_path}")
     else:
         candidates = find_config_files()
         if not candidates:
+            # List every directory searched so the operator can see where to
+            # put a host file.
             searched = ", ".join(str(d) for tier in config_search_tiers() for d in tier)
             sys.exit(
                 f"No YAML config files found in: {searched}\n"
@@ -2191,12 +2429,15 @@ Config file selection:
         else:
             chosen = ConfigSelectApp(candidates).run()
             if chosen is None:
+                # Quitting the chooser is a normal user action, not an error.
                 sys.exit(0)
             config_path = chosen
 
     try:
         config = load_config(config_path)
     except Exception as exc:
+        # Broad on purpose: YAML, I/O and schema errors all end the same
+        # way, as a one-line message instead of a traceback.
         sys.exit(f"Error loading config: {exc}")
 
     if not config.hosts:
@@ -2209,9 +2450,13 @@ Config file selection:
     except ValueError as exc:
         sys.exit(f"Error: {exc}")
 
+    # One registry for the whole process, created before the first App so
+    # tunnels outlive each SSHSelector instance and are stopped at exit.
     tunnels = TunnelRegistry()
     _install_tunnel_shutdown(tunnels)
 
+    # Error text from the previous ssh attempt; passed to the next selector
+    # instance so it can show the failure dialog.
     ssh_error = ""
     while True:
         app = SSHSelector(config, error=ssh_error, tunnels=tunnels)
@@ -2226,11 +2471,14 @@ Config file selection:
         skip_proxy = result.skip_proxy
 
         if skip_proxy and host.proxy_jump:
+            # Make the bypass visible: a direct connection where the operator
+            # expected the gateway path is otherwise easy to misdiagnose.
             print(f"Note: proxy jump skipped (same subnet as {host.proxy_jump})")
 
         if result.mode == "new_terminal":
             cmd = host.ssh_command(user_entry, skip_proxy=skip_proxy)
             _open_in_new_terminal(cmd, host.nickname)
+            # The session runs elsewhere; its outcome is not observable here.
             ssh_error = ""
         elif result.mode == "tunnel":
             cmd = host.tunnel_command(
@@ -2245,6 +2493,8 @@ Config file selection:
             try:
                 subprocess.run(cmd)
             except KeyboardInterrupt:
+                # Ctrl+C is the documented way to close a foreground tunnel;
+                # return to the selector instead of exiting the program.
                 print("\nTunnel closed.")
             ssh_error = ""
         else:
