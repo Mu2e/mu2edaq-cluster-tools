@@ -1505,18 +1505,77 @@ class SSHSelector(App[AppResult]):
 # Config file discovery and selection
 # ---------------------------------------------------------------------------
 
+#: Environment variable naming a host file; used when -c is not given.
+CONFIG_ENV_VAR = "SSH_SELECTOR_CONFIG"
+#: Environment variable naming the install.sh install directory (shared with install.sh).
+INSTALL_DIR_ENV_VAR = "MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR"
+#: Marker/manifest file that install.sh writes at the top of its install directory.
+INSTALL_MARKER = ".mu2edaq-cluster-tools-install"
+
+
+def user_config_dir() -> Path:
+    """Per-user host file directory: $XDG_CONFIG_HOME (or ~/.config)/mu2edaq/cluster-tools."""
+    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
+    return Path(base) / "mu2edaq" / "cluster-tools"
+
+
+def install_dir() -> Optional[Path]:
+    """Return the install.sh install directory, or None if not running from one.
+
+    $MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR wins; otherwise the parent of the running
+    venv (sys.prefix) counts only if it carries the install.sh marker file.
+    """
+    env = os.environ.get(INSTALL_DIR_ENV_VAR)
+    if env:
+        return Path(env).expanduser()
+    candidate = Path(sys.prefix).parent
+    if (candidate / INSTALL_MARKER).is_file():
+        return candidate
+    return None
+
+
+def config_search_tiers() -> list[list[Path]]:
+    """Directories searched for host files, as precedence tiers (highest first)."""
+    tiers = [[Path("."), Path("config")], [user_config_dir()]]
+    inst = install_dir()
+    if inst is not None:
+        tiers.append([inst / "config"])
+    return tiers
+
+
 def find_config_files() -> list[Path]:
-    """Return *.yaml files found in ./ then ./config/, deduplicated by real path."""
-    found: list[Path] = []
+    """Return the *.yaml host files of the first search tier that has any.
+
+    Tiers, in order: ./ and ./config/ (merged); the per-user config directory;
+    the install directory's config/. Files are deduplicated by real path.
+    """
     seen: set[Path] = set()
-    for d in (Path("."), Path("config")):
-        if d.is_dir():
-            for p in sorted(d.glob("*.yaml")):
-                resolved = p.resolve()
-                if resolved not in seen:
-                    seen.add(resolved)
-                    found.append(p)
-    return found
+    for tier in config_search_tiers():
+        found: list[Path] = []
+        for d in tier:
+            if d.is_dir():
+                for p in sorted(d.glob("*.yaml")):
+                    resolved = p.resolve()
+                    if resolved not in seen:
+                        seen.add(resolved)
+                        found.append(p)
+        if found:
+            return found
+    return []
+
+
+def explicit_config_path(cli_value: Optional[str]) -> tuple[Optional[Path], str]:
+    """Return (path, source) for a host file named by -c or $SSH_SELECTOR_CONFIG.
+
+    -c takes precedence over the environment; (None, "") means neither was given
+    and discovery should run.
+    """
+    if cli_value:
+        return Path(cli_value).expanduser(), "-c"
+    env = os.environ.get(CONFIG_ENV_VAR)
+    if env:
+        return Path(env).expanduser(), CONFIG_ENV_VAR
+    return None, ""
 
 
 class ConfigItem(ListItem):
@@ -1625,9 +1684,14 @@ def main() -> None:
         description="SSH Host Selector — pick a host from a YAML list and connect.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Config file search order (when -c is not given):
-  1. *.yaml files in the current directory
-  2. *.yaml files in ./config/
+Config file selection:
+  1. -c / --config FILE
+  2. $SSH_SELECTOR_CONFIG (a file)
+  3. Discovery: the first of these tiers that holds any *.yaml file wins
+     a. ./*.yaml and ./config/*.yaml
+     b. $XDG_CONFIG_HOME/mu2edaq/cluster-tools/*.yaml
+        (default ~/.config/mu2edaq/cluster-tools/)
+     c. <install dir>/config/*.yaml (install.sh installs only)
   If exactly one file is found it is loaded automatically.
   If multiple files are found a selection screen is shown.
 """,
@@ -1635,7 +1699,7 @@ Config file search order (when -c is not given):
     parser.add_argument(
         "-c", "--config",
         metavar="FILE",
-        help="Path to a YAML config file. Skips auto-discovery when given.",
+        help=f"Path to a YAML config file. Overrides ${CONFIG_ENV_VAR}; skips auto-discovery.",
     )
     parser.add_argument(
         "--version",
@@ -1644,16 +1708,18 @@ Config file search order (when -c is not given):
     )
     args = parser.parse_args()
 
-    if args.config:
-        config_path = Path(args.config)
+    explicit, source = explicit_config_path(args.config)
+    if explicit is not None:
+        config_path = explicit
         if not config_path.exists():
-            sys.exit(f"Error: config file not found: {config_path}")
+            sys.exit(f"Error: config file not found ({source}): {config_path}")
     else:
         candidates = find_config_files()
         if not candidates:
+            searched = ", ".join(str(d) for tier in config_search_tiers() for d in tier)
             sys.exit(
-                "No YAML config files found in ./ or ./config/.\n"
-                "Use -c / --config FILE to specify one explicitly."
+                f"No YAML config files found in: {searched}\n"
+                f"Use -c / --config FILE or set {CONFIG_ENV_VAR} to specify one explicitly."
             )
         elif len(candidates) == 1:
             config_path = candidates[0]

@@ -102,3 +102,15 @@ KLIST_EXPIRED = """\
   Issued                Expires               Principal
 Jan  1 10:00:00 2020  Jan  2 10:00:00 2020  krbtgt/EXAMPLE.ORG@EXAMPLE.ORG
 """
+
+
+# ---------------------------------------------------------------------------
+# Config discovery isolation
+# ---------------------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def _isolate_config_discovery(tmp_path_factory, monkeypatch):
+    """Keep the operator's real ~/.config and environment out of discovery tests."""
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path_factory.mktemp("xdg")))
+    monkeypatch.delenv("SSH_SELECTOR_CONFIG", raising=False)
+    monkeypatch.delenv("MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR", raising=False)
