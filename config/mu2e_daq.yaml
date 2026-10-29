@@ -58,7 +58,7 @@ groups:
       - mu2etrk
       - mu2ecalo
   Farm MC1:
-    proxy_jump: mu2egateway01.fnal.gov
+    proxy_jump: g2gateway01.fnal.gov
     users:
       - default
       - mu2edaq

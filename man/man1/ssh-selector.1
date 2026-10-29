@@ -1,0 +1,291 @@
+.TH SSH\-SELECTOR 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.SH NAME
+ssh\-selector \- terminal UI for picking and connecting to SSH hosts
+.SH SYNOPSIS
+.B ssh\-selector
+.RB [ \-c
+.IR FILE ]
+.br
+.B ssh\-selector
+.BR \-\-version | \-h
+.SH DESCRIPTION
+.B ssh\-selector
+is a Textual terminal UI over a YAML host list.
+Hosts are shown in named groups, two per row, and can be filtered by
+nickname or hostname.
+Each host may have several login users, a non-default port and a ProxyJump
+host.
+The tool builds and runs
+.BR ssh (1)
+command lines; it holds no credentials and reads no
+.I ~/.ssh/config
+of its own, although
+.B ssh
+does.
+.PP
+The right-hand panel shows the highlighted host's details and the
+.B ssh
+command for its first user, the output of
+.BR klist (1)
+refreshed every 60 s with expiry colouring (green over 2 h, yellow under,
+red expired), the local hostname, IP and IPv4 subnets, and the background
+tunnels started in this session.
+.PP
+At start-up every hostname is resolved with
+.BR gethostbyname (3);
+the dot next to a host shows whether the name resolved, not whether the host
+answers.
+If a host has a ProxyJump and its resolved address lies inside one of the
+local IPv4 subnets, the jump is skipped.
+.PP
+Choosing a host (Enter) leaves the UI and runs
+.B ssh
+in the current terminal; when the session ends the UI comes back.
+.BR ssh 's
+own standard error is captured during the session and shown in a dialog if
+it exits non-zero, so its warnings are not visible while the session runs.
+.SH OPTIONS
+.TP
+.BR \-c ", " \-\-config " \fIFILE\fR"
+YAML host file.
+Skips discovery.
+.TP
+.B \-\-version
+Print
+.B ssh\-selector
+.I version
+and exit.
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.SH CONFIG FILE DISCOVERY
+Without
+.BR \-c ,
+every
+.I *.yaml
+file in
+.I ./
+and then
+.I ./config/
+is a candidate (relative to the current directory; duplicates by real path are
+dropped).
+One candidate is loaded directly; several are offered in a picker; none is an
+error.
+No other directory and no environment variable is searched.
+In this repository's
+.I config/
+the picker also lists the
+.B lan\-scan
+profiles, which have no
+.B hosts
+key and stop with "No hosts defined".
+.SH CONFIGURATION
+Top-level keys:
+.TP
+.B hosts
+Required list.
+Each entry needs
+.BR hostname ;
+optional
+.B nickname
+(default the hostname),
+.BR group ,
+.B port
+(default 22),
+.B users
+or
+.B user
+(a list or a scalar; the first is the default login),
+.B proxy_jump
+and
+.BR proxy_user .
+.TP
+.B grouplist
+Display order of group names.
+Groups used by hosts but not listed follow in order of first use; hosts with no
+group appear under "Other".
+.TP
+.B groups
+Per-group defaults:
+.BR users ,
+.BR proxy_jump ,
+.BR proxy_user .
+A host key that is present, even as
+.BR null ,
+overrides the group value.
+.TP
+.B cache_lifetime
+Seconds a "Check Users" result stays fresh.
+Default 600.
+.TP
+.B panel_width
+Width of the right-hand panel in columns.
+Default 50.
+.PP
+The user
+.B default
+means the current login name
+.RB ( $USER ).
+The jump user is
+.B proxy_user
+when set, else the destination user, unless
+.B proxy_jump
+already contains
+.BR user@ .
+The resulting commands are
+.PP
+.RS
+.nf
+ssh [\-p PORT] [\-J JUMPUSER@JUMPHOST] \-l USER HOST
+ssh \-N \-L LOCAL:localhost:REMOTE [\-p PORT] [\-J ...] \-l USER HOST
+.fi
+.RE
+.PP
+.I settings.md
+in the source tree is the full reference;
+.I config/hosts.yaml.example
+is an annotated example.
+.SH KEY BINDINGS
+.TP
+.B Enter
+Connect in the current terminal.
+A user picker appears when the host has more than one user.
+.TP
+.B n
+Connect in a new terminal window: Terminal.app via
+.BR osascript (1)
+on macOS; otherwise the first of
+.BR gnome\-terminal ,
+.BR xfce4\-terminal ,
+.BR konsole ,
+.B xterm
+found on
+.BR PATH .
+The host list is then rebuilt, as after a foreground session.
+.TP
+.B t
+Port-forward tunnel.
+Prompts for a local and a remote port (1\-65535) and a background switch
+(default on).
+In the background the tunnel is a child
+.B ssh \-N
+process listed in the Tunnels panel; in the foreground the UI exits, the
+tunnel runs until Ctrl-C, and the UI comes back.
+.TP
+.B c
+"Check Users": runs
+.B ssh \-o BatchMode=yes \-o ConnectTimeout=5 ... who
+against
+.I every
+host in the file at once, as each host's first user and through its jump host,
+and shows the number of lines
+.B who
+prints (12 s limit per host).
+Results are reused for
+.B cache_lifetime
+seconds.
+There is no limit on concurrent connections.
+.TP
+.B /
+Focus the filter field.
+.TP
+.B r
+Run
+.B kinit \-R
+(renew the current ticket) and refresh the panel.
+.TP
+.B A
+About screen.
+.TP
+.B q
+Quit.
+.TP
+.B Left\fR, \fBRight
+Move between the two hosts of a row.
+.TP
+.B Escape
+In the filter field, clear it and return to the list; elsewhere, quit.
+In a dialog, cancel it.
+.PP
+In the Tunnels panel,
+.B k
+or
+.B Delete
+sends SIGTERM to the highlighted background tunnel.
+.SH FILES
+.TP
+.I ./*.yaml\fR, \fI./config/*.yaml
+Discovered host files.
+.TP
+.I config/mu2e_daq.yaml
+Mu2e DAQ topology (75 hosts in 13 groups).
+.TP
+.I config/nova_daq.yaml\fR, \fIconfig/mu2e_offline.yaml\fR, \fIconfig/fnal_gpmv.yaml
+NOvA DAQ, Mu2e offline and Fermilab GPVM host lists.
+.TP
+.I config/hosts.yaml.example\fR, \fIconfig/example.yaml
+Annotated examples.
+.SH ENVIRONMENT
+.TP
+.B USER
+Login name used for the
+.B default
+user (falls back to
+.BR getpass.getuser ()).
+.TP
+.B KRB5CCNAME
+Not read directly; honoured by
+.BR klist ,
+.B kinit
+and
+.BR ssh .
+.SH EXIT STATUS
+.TP
+.B 0
+Quit from the host list or the config picker.
+.TP
+.B 1
+No config file found, the
+.B \-c
+file does not exist, the file fails to load, or it defines no hosts.
+.TP
+.B 2
+Invalid command line.
+.SH EXAMPLES
+.RS
+.nf
+ssh\-selector \-c config/mu2e_daq.yaml
+cd ~/clusters && ssh\-selector        # pick among ./*.yaml
+.fi
+.RE
+.SH BUGS
+Background tunnels belong to one run of the UI.
+After Enter, n or a foreground t the UI is rebuilt with an empty Tunnels panel,
+and on quit the tunnels keep running; neither case stops them.
+They are started without
+.BR "ExitOnForwardFailure=yes" ,
+so a new tunnel whose local port is still held by an old one stays up,
+forwards nothing, and is listed as alive.
+.PP
+.B xfce4\-terminal \-e
+expects one string but is given the command as separate words.
+On Windows the new-terminal path calls
+.BR which ,
+which does not exist there.
+.SH KERBEROS SUPPORT
+Ticket display and renewal need
+.B klist
+and
+.B kinit
+on
+.BR PATH .
+On Windows this works within WSL and from PowerShell when Kerberos is
+configured; MIT Kerberos for Windows has compatibility issues with some
+terminal emulators.
+.SH SEE ALSO
+.BR lan\-scan (1),
+.BR ssh (1),
+.BR klist (1),
+.BR kinit (1)
+.SH AUTHOR
+Andrew Norman, Mu2e DAQ Group, Fermi National Accelerator Laboratory.

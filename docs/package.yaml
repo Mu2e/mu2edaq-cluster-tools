@@ -1,0 +1,122 @@
+schema: mega-review/1
+package: mu2edaq-cluster-tools
+tier: A
+group: network-arbitration
+repo:
+  url: git@github.com:Mu2e/mu2edaq-cluster-tools.git
+  exists: true
+  issues_enabled: true
+doc_dir: docs
+summary: >
+  Operator workstation tools for reaching DAQ nodes, a Textual SSH host picker
+  (ssh-selector) driven by YAML topology files for Mu2e DAQ, Mu2e offline,
+  NOvA DAQ and Fermilab GPVMs, plus lan-scan, an unthrottled ICMP and
+  TCP-connect sweep of one IPv4 subnet
+languages: [python, shell]
+loc: 3595
+
+runtime:
+  executables:
+    - name: ssh-selector
+      kind: cli
+      man_page: man/man1/ssh-selector.1
+    - name: lan-scan
+      kind: cli
+      man_page: man/man1/lan-scan.1
+    - name: bootstrap.sh
+      kind: script
+      man_page: man/man1/bootstrap.sh.1
+    - name: install.sh
+      kind: script
+      man_page: man/man1/install.sh.1
+  services: []
+  ports:
+    - {port: 22, proto: tcp, role: ssh-destination-default, source: "src/mu2edaq_cluster_tools/ssh_selector.py:67"}
+    - {port: 22, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:17"}
+    - {port: 80, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:18"}
+    - {port: 443, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:19"}
+  config_files:
+    - config/mu2e_daq.yaml
+    - config/mu2e_offline.yaml
+    - config/nova_daq.yaml
+    - config/fnal_gpmv.yaml
+    - config/example.yaml
+    - config/hosts.yaml.example
+    - config/lan_scan-mu2edaq.yaml
+    - config/lan_scan-mu2edaq-data.yaml
+    - config/lan_scan-mu2edaq-ipmi.yaml
+    - config/lan_scan.yaml.example
+  env_vars: [LAN_SCAN_NETWORK, LAN_SCAN_TIMEOUT, LAN_SCAN_WORKERS, LAN_SCAN_PORTS, USER, INSTALL_DIR, APP_CMD, PYTHON]
+
+interactions:
+  depends_on: []
+  depended_on_by: []
+  external: [openssh-client, ssh-jump-hosts, kerberos-klist-kinit, icmp-ping, dns]
+
+quality:
+  tests: {present: true, framework: pytest, count: 152}
+  ci: {present: true, workflows: [.github/workflows/ci.yml]}
+  license: MIT
+  artifacts_clean: true
+
+findings:
+  - id: CLU-001
+    severity: S3
+    type: bug
+    title: "[topology] Farm MC1 jumps through mu2egateway01, but the MC1 enclave's ingress is g2gateway01"
+    issue: pending
+    fingerprint: 2c0b170b
+  - id: CLU-002
+    severity: S3
+    type: bug
+    title: "[ssh-selector] Check Users opens one SSH connection per configured host at once, all through the same jump host"
+    issue: pending
+    fingerprint: d9acc61d
+  - id: CLU-003
+    severity: S3
+    type: enhancement
+    title: "[lan-scan] no bound on scan size or rate, auto-detect scans whichever network is listed first, and a shipped profile targets a routable site subnet"
+    issue: pending
+    fingerprint: 2df83ccb
+  - id: CLU-004
+    severity: S3
+    type: bug
+    title: "[ssh-selector] background tunnels leave the panel after any connection and survive quit; a reused local port silently keeps the old forward"
+    issue: pending
+    fingerprint: f644c26b
+  - id: CLU-005
+    severity: S3
+    type: bug
+    title: "[install] install.sh takes its target from the generic INSTALL_DIR variable and --uninstall deletes it recursively"
+    issue: pending
+    fingerprint: b7bba2a1
+  - id: CLU-006
+    severity: S4
+    type: bug
+    title: "[version] lan-scan --version reports 1.0.0 while the package is 1.0.1"
+    issue: pending
+    fingerprint: e39dde4b
+  - id: CLU-007
+    severity: S4
+    type: bug
+    title: "[lan-scan] probe timeouts are not what --timeout says: Linux ping -W gets milliseconds, and the DNS timeout is global and ineffective"
+    issue: pending
+    fingerprint: d1d3bf59
+  - id: CLU-008
+    severity: S4
+    type: enhancement
+    title: "[config] ssh-selector looks for host files only under the current directory, and install.sh installs none"
+    issue: pending
+    fingerprint: 09709a54
+  - id: CLU-009
+    severity: S4
+    type: enhancement
+    title: "[ci] CI matrix omits Python 3.9, the declared floor and the AlmaLinux 9 system Python"
+    issue: pending
+    fingerprint: 0936c4c9
+  - id: CLU-010
+    severity: S4
+    type: documentation
+    title: "[hygiene] minor findings from the 2026-10 review (rollup)"
+    issue: pending
+    fingerprint: 9a081a38

@@ -1,0 +1,125 @@
+.TH INSTALL.SH 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.SH NAME
+install.sh \- per-user install of ssh\-selector and lan\-scan with launchers
+.SH SYNOPSIS
+.B ./install.sh
+.br
+.B ./install.sh \-\-uninstall
+.br
+.B ./install.sh \-\-version
+.SH DESCRIPTION
+Finds the first of
+.BR python3 ,
+.BR python3.12 ,
+.BR python3.11 ,
+.BR python3.10 ,
+.BR python3.9 ,
+.B python
+on
+.B PATH
+that is 3.9 or newer; creates or updates a venv in
+.BR $INSTALL_DIR/venv ;
+installs this checkout into it; copies
+.I config/hosts.yaml.example
+to
+.IR $INSTALL_DIR/config/ ;
+and writes two launcher scripts,
+.B $APP_CMD
+and
+.BR lan\-scan ,
+into the first existing of
+.I ~/.local/bin
+and
+.I ~/bin
+(creating
+.I ~/.local/bin
+if neither exists).
+Existing launchers of those names are overwritten.
+It warns when that directory is not on
+.BR PATH .
+.PP
+None of the topology files is installed, and
+.BR ssh\-selector (1)
+looks for host files only in the current directory and its
+.IR config/ ,
+so the installed command needs
+.B \-c
+or a directory that holds the YAML.
+.SH OPTIONS
+Only the first argument is examined.
+Any other value, including a mistyped option, performs a normal install.
+.TP
+.B \-\-uninstall
+Run
+.B rm \-rf
+on
+.B $INSTALL_DIR
+and remove
+.B $APP_CMD
+and
+.B lan\-scan
+from both
+.I ~/.local/bin
+and
+.IR ~/bin ,
+whoever wrote them.
+No confirmation.
+.TP
+.B \-\-version
+Print
+.B mu2edaq\-cluster\-tools
+.I version
+(from
+.IR ssh_selector.py )
+and exit.
+.SH ENVIRONMENT
+.TP
+.B INSTALL_DIR
+Install directory.
+Default
+.IR ~/.local/share/mu2edaq\-cluster\-tools .
+The name is generic: a value inherited from another tool's environment is
+used as is, and
+.B \-\-uninstall
+deletes it recursively.
+.TP
+.B APP_CMD
+Name of the
+.B ssh\-selector
+launcher.
+Default
+.BR ssh\-selector .
+.SH FILES
+.TP
+.I $INSTALL_DIR/venv/
+Private virtual environment.
+.TP
+.I $INSTALL_DIR/config/hosts.yaml.example
+Annotated example.
+.TP
+.IR ~/.local/bin/ssh\-selector ", " ~/.local/bin/lan\-scan
+Launchers that
+.B exec
+the venv's entry points.
+.SH EXIT STATUS
+.TP
+.B 0
+Success, including an uninstall that found nothing.
+.TP
+.B 1
+No Python 3.9+, or any failing step
+.RB ( "set \-e" ).
+.SH EXAMPLES
+.RS
+.nf
+\&./install.sh
+ssh\-selector \-c ~/Git/mu2edaq\-cluster\-tools/config/mu2e_daq.yaml
+\&./install.sh \-\-uninstall
+.fi
+.RE
+.SH SEE ALSO
+.BR bootstrap.sh (1),
+.BR ssh\-selector (1),
+.BR lan\-scan (1)
+.SH AUTHOR
+Andrew Norman, Mu2e DAQ Group, Fermi National Accelerator Laboratory.
