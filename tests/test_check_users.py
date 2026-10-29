@@ -1,4 +1,15 @@
-"""Tests for the "Check Users" fan-out limit (GitHub issue #7)."""
+"""!
+@file test_check_users.py
+@brief Tests for the bounded "Check Users" fan-out in ssh-selector (GitHub issue #7).
+
+Before #7, pressing `c` opened one SSH connection per configured host at
+once, all through the same jump host, tripping sshd MaxStartups. These
+tests cover the check_concurrency setting and its precedence
+(commandline > environment > YAML > default), the semaphore bound on
+in-flight probes, de-duplication of repeated presses, and the per-host
+probe's BatchMode/timeout handling. SSH is never executed: probes and
+asyncio.create_subprocess_exec are replaced with fakes.
+"""
 
 import asyncio
 
@@ -19,10 +30,24 @@ from .conftest import write_yaml
 
 
 def _hosts(n):
+    """!
+    @brief Build n synthetic hosts that all share one jump host.
+    @param n  Number of hosts.
+    @return List of Host objects node000 .. node(n-1).
+    """
     return [Host(hostname=f"node{i:03d}.example.com", proxy_jump="gw.example.com") for i in range(n)]
 
 
 def _app(n_hosts, concurrency=DEFAULT_CHECK_CONCURRENCY):
+    """!
+    @brief Build a non-running SSHSelector over n synthetic hosts.
+
+    _show_user_count is stubbed because there is no DOM outside a running app.
+
+    @param n_hosts      Number of hosts.
+    @param concurrency  check_concurrency limit for the Config.
+    @return SSHSelector instance.
+    """
     cfg = Config(hosts=_hosts(n_hosts), grouplist=[], check_concurrency=concurrency)
     app = SSHSelector(cfg)
     app._show_user_count = lambda hostname, count: None   # no DOM outside a running app
@@ -34,14 +59,26 @@ def _app(n_hosts, concurrency=DEFAULT_CHECK_CONCURRENCY):
 # ---------------------------------------------------------------------------
 
 class TestCheckConcurrencyConfig:
+    """!
+    @brief Resolution and validation of the check_concurrency limit.
+    """
     def test_default_is_below_sshd_maxstartups(self):
+        """!
+        @brief The default limit is 8, below the sshd MaxStartups start value of 10.
+        """
         assert DEFAULT_CHECK_CONCURRENCY == 8
         assert Config(hosts=[], grouplist=[]).check_concurrency == DEFAULT_CHECK_CONCURRENCY
 
     def test_yaml_default(self, minimal_config):
+        """!
+        @brief A host file without check_concurrency yields the default.
+        """
         assert load_config(minimal_config).check_concurrency == DEFAULT_CHECK_CONCURRENCY
 
     def test_yaml_value(self, tmp_path):
+        """!
+        @brief check_concurrency in YAML is honoured.
+        """
         p = write_yaml(tmp_path, """
             check_concurrency: 3
             hosts:
@@ -51,6 +88,10 @@ class TestCheckConcurrencyConfig:
 
     @pytest.mark.parametrize("bad", [0, -2, "many"])
     def test_yaml_invalid_rejected(self, tmp_path, bad):
+        """!
+        @brief Non-positive or non-integer YAML values raise ValueError naming the key.
+        @param bad  Parametrized invalid value.
+        """
         p = write_yaml(tmp_path, f"""
             check_concurrency: {bad}
             hosts:
@@ -60,26 +101,47 @@ class TestCheckConcurrencyConfig:
             load_config(p)
 
     def test_config_used_when_nothing_else(self):
+        """!
+        @brief With no CLI or environment value the config value is used.
+        """
         assert resolve_check_concurrency(None, {}, 5) == 5
 
     def test_env_overrides_config(self):
+        """!
+        @brief The environment variable overrides the config value.
+        """
         assert resolve_check_concurrency(None, {CHECK_CONCURRENCY_ENV: "2"}, 5) == 2
 
     def test_blank_env_ignored(self):
+        """!
+        @brief A whitespace-only environment value falls through to config.
+        """
         assert resolve_check_concurrency(None, {CHECK_CONCURRENCY_ENV: " "}, 5) == 5
 
     def test_cli_overrides_env_and_config(self):
+        """!
+        @brief The commandline value overrides both environment and config.
+        """
         assert resolve_check_concurrency(4, {CHECK_CONCURRENCY_ENV: "2"}, 5) == 4
 
     def test_invalid_env_names_variable(self):
+        """!
+        @brief An invalid environment value raises an error naming the variable.
+        """
         with pytest.raises(ValueError, match=CHECK_CONCURRENCY_ENV):
             resolve_check_concurrency(None, {CHECK_CONCURRENCY_ENV: "0"}, 5)
 
     def test_invalid_cli_names_option(self):
+        """!
+        @brief An invalid CLI value raises an error naming --check-concurrency.
+        """
         with pytest.raises(ValueError, match="--check-concurrency"):
             resolve_check_concurrency(0, {}, 5)
 
     def test_app_takes_limit_from_config(self):
+        """!
+        @brief SSHSelector copies the limit from its Config.
+        """
         assert _app(1, concurrency=3)._check_concurrency == 3
 
 
@@ -88,11 +150,19 @@ class TestCheckConcurrencyConfig:
 # ---------------------------------------------------------------------------
 
 class TestCheckUsersFanOut:
+    """!
+    @brief _check_all_user_counts() bounds and de-duplicates SSH probes.
+    """
     @pytest.mark.parametrize("limit", [1, 3, 8])
     def test_never_more_than_limit_in_flight(self, limit):
+        """!
+        @brief With 40 hosts, peak concurrent probes equals the limit exactly and every host is probed once.
+        @param limit  Parametrized concurrency limit.
+        """
         app = _app(40, concurrency=limit)
         state = {"now": 0, "peak": 0, "calls": 0}
 
+        # Fake probe tracks how many probes are in flight at once; the short sleep forces overlap.
         async def fake_probe(host):
             state["now"] += 1
             state["calls"] += 1
@@ -108,6 +178,9 @@ class TestCheckUsersFanOut:
         assert len(app._user_counts) == 40
 
     def test_fresh_hosts_are_not_probed(self):
+        """!
+        @brief Hosts with a fresh cached count are skipped.
+        """
         app = _app(5)
         probed = []
 
@@ -115,6 +188,7 @@ class TestCheckUsersFanOut:
             probed.append(host.hostname)
             return 0
 
+        # Pre-seed a fresh cache entry so node000 must be skipped.
         app._user_counts["node000.example.com"] = (2, ssh_selector.time.monotonic())
         app._probe_user_count = fake_probe
         asyncio.run(app._check_all_user_counts())
@@ -122,9 +196,13 @@ class TestCheckUsersFanOut:
         assert len(probed) == 4
 
     def test_repeated_press_does_not_duplicate_probes(self):
+        """!
+        @brief Two overlapping presses probe each host only once.
+        """
         app = _app(6, concurrency=2)
         probed = []
 
+        # The sleep keeps the first press's probes in flight while the second press starts.
         async def fake_probe(host):
             probed.append(host.hostname)
             await asyncio.sleep(0.005)
@@ -144,7 +222,19 @@ class TestCheckUsersFanOut:
 # ---------------------------------------------------------------------------
 
 class _FakeProc:
+    """!
+    @brief Minimal stand-in for asyncio.subprocess.Process used by the probe tests.
+
+    Returns canned stdout and exit status, or hangs in communicate() to
+    exercise the timeout path; records whether kill() was called.
+    """
     def __init__(self, stdout=b"", returncode=0, hang=False):
+        """!
+        @brief Configure the fake process.
+        @param stdout      Bytes returned by communicate().
+        @param returncode  Exit status reported after communicate().
+        @param hang        If True, communicate() sleeps longer than any test timeout.
+        """
         self._stdout = stdout
         self._rc = returncode
         self._hang = hang
@@ -152,27 +242,48 @@ class _FakeProc:
         self.killed = False
 
     async def communicate(self):
+        """!
+        @brief Return (stdout, b"") after optionally hanging.
+        @return Tuple of stdout and empty stderr bytes.
+        """
         if self._hang:
             await asyncio.sleep(10)
         self.returncode = self._rc
         return self._stdout, b""
 
     def kill(self):
+        """!
+        @brief Record the kill and set returncode to -9.
+        """
         self.killed = True
         self.returncode = -9
 
     async def wait(self):
+        """!
+        @brief Return the current returncode.
+        @return Exit status.
+        """
         return self.returncode
 
 
 class TestProbe:
+    """!
+    @brief SSHSelector._probe_user_count(): ssh argv, `who` parsing and failure handling.
+    """
     def _run(self, monkeypatch, proc):
+        """!
+        @brief Run one probe against a fake ssh process with a 50 ms timeout.
+        @param monkeypatch  Patches create_subprocess_exec and CHECK_USERS_TIMEOUT.
+        @param proc         _FakeProc returned in place of ssh.
+        @return Tuple (probe result, captured argv).
+        """
         captured = {}
 
         async def fake_exec(*cmd, **kw):
             captured["cmd"] = cmd
             return proc
 
+        # Replace process creation so no ssh runs; shrink the timeout so the hang case finishes fast.
         monkeypatch.setattr(ssh_selector.asyncio, "create_subprocess_exec", fake_exec)
         monkeypatch.setattr(ssh_selector, "CHECK_USERS_TIMEOUT", 0.05)
         app = _app(1)
@@ -180,16 +291,25 @@ class TestProbe:
         return result, captured["cmd"]
 
     def test_counts_who_lines(self, monkeypatch):
+        """!
+        @brief Non-blank `who` lines are counted; ssh runs with BatchMode=yes and ConnectTimeout=5.
+        """
         result, cmd = self._run(monkeypatch, _FakeProc(b"a pts/0\nb pts/1\n\n"))
         assert result == 2
         assert cmd[1:5] == ("-o", "BatchMode=yes", "-o", "ConnectTimeout=5")
         assert cmd[-1] == "who"
 
     def test_nonzero_exit_is_unreachable(self, monkeypatch):
+        """!
+        @brief A non-zero ssh exit status yields None (unreachable).
+        """
         result, _ = self._run(monkeypatch, _FakeProc(b"", returncode=255))
         assert result is None
 
     def test_timeout_kills_ssh(self, monkeypatch):
+        """!
+        @brief A probe exceeding the timeout returns None and kills the ssh process.
+        """
         proc = _FakeProc(hang=True)
         result, _ = self._run(monkeypatch, proc)
         assert result is None
