@@ -139,11 +139,13 @@ are in [INTERFACES.md §4](INTERFACES.md#4-lan-scan-probe-behaviour).
 
 ### Installers
 
-`bootstrap.sh` creates `venv/` and installs `.[dev]` relative to the current
-directory (editable with `--dev`). `install.sh` installs into
-`$INSTALL_DIR` (default `~/.local/share/mu2edaq-cluster-tools`) and writes
-`ssh-selector` and `lan-scan` launchers into `~/.local/bin` or `~/bin`;
-`--uninstall` removes `$INSTALL_DIR` recursively (CLU-005).
+`bootstrap.sh` changes to its own directory, creates `venv/` there and installs
+the checkout (`pip install .`; `pip install -e .[dev]` with `--dev`).
+`install.sh` installs into `--prefix` / `$MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR`
+(default `~/.local/share/mu2edaq-cluster-tools`), copies the topology files to
+its `config/`, writes `ssh-selector` and `lan-scan` launchers into `--bin-dir`
+(default `~/.local/bin` or `~/bin`) and records all of it in a manifest;
+`--uninstall` removes only the manifest's entries (CLU-005, issue #10).
 
 ## Interfaces
 
