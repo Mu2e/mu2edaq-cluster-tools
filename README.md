@@ -25,13 +25,13 @@ What does it do?
 - **Two-column layout** — hosts are displayed side by side for compact browsing; use left/right arrows to select within a row
 - **Per-group and per-host configuration** — groups have common config settings that can be overridden by per host testtings (i.e. all tracker nodes use the same jump host and user list, but one special node that got pulled out to lab 3 uses a different jump proxy) 
 - **Multiple users per host** — choose which user you are using for a connection from a list of configured users
-- **Host DNS resolution on startup** — each host is resolved in the background; a green/red dot indicates reachability
+- **Host DNS resolution on startup** — each host is resolved in the background; a green/red dot shows whether the hostname resolved in DNS (not whether the host answers)
 - **Host Population Report** - each host is queried to see how crowded it is
 - **Automatic proxy skip** — if the destination host is on the same local subnet as the client, the configured proxy jump is automatically bypassed
 - **SSH tunnel mode** — open a port-forward tunnel (`ssh -N -L`) instead of an interactive shell; prompts for local and remote port numbers
 - **Kerberos ticket panel** — displays active tickets with time-to-expiry color coding; `r` renews the principal via `kinit -R`
 - **Network info panel** — shows local hostname, IP, domain, and detected subnets
-- **Error Displays** — if a connection fails, the stderr output is displayed so you can debug it
+- **Error Displays** — `ssh`'s stderr is shown live in the terminal; if `ssh` itself fails (exit status 255) its last stderr output is also shown in a dialog so you can debug it
 - **Multiple config files** — auto-discovers `*.yaml` files in `./` and `./config/`; shows a picker when more than one is found
 - **Foreground and Background Tunnels** - starts ssh tunnels in either background or foreground
 
@@ -58,10 +58,21 @@ Then run it from a directory containing your `*.yaml` host config (or point at
 one explicitly):
 
 ```bash
-ssh-selector                 # auto-discovers ./*.yaml and ./config/*.yaml
+ssh-selector                 # auto-discovers host files (see below)
 ssh-selector -c hosts.yaml   # use a specific config file
+SSH_SELECTOR_CONFIG=~/hosts.yaml ssh-selector   # same, from the environment
 ssh-selector --version
 ```
+
+Host file selection, first match wins: `-c FILE`, then `$SSH_SELECTOR_CONFIG`,
+then discovery. Discovery searches these tiers in order and uses the first that
+holds any `*.yaml` file (one file loads directly; several open a picker):
+
+1. `./*.yaml` and `./config/*.yaml`
+2. `~/.config/mu2edaq/cluster-tools/*.yaml` (`$XDG_CONFIG_HOME` is honoured)
+3. `<install dir>/config/*.yaml` for an `install.sh` install
+   (`$MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR`, default
+   `~/.local/share/mu2edaq-cluster-tools`)
 
 ### With the install script
 
@@ -75,16 +86,55 @@ cd mu2edaq-cluster-tools
 ```
 
 This will:
-- Copy the application to `~/.local/share/mu2edaq-cluster-tools/`
-- Create a self-contained virtual environment there with all dependencies
-- Install a `ssh-selector` launcher in `~/.local/bin/` (or `~/bin/` if that exists)
+- Create a self-contained virtual environment in
+  `~/.local/share/mu2edaq-cluster-tools/venv` and install the package into it
+- Copy the topology files (`mu2e_daq.yaml`, `mu2e_offline.yaml`,
+  `nova_daq.yaml`, `fnal_gpvm.yaml`) and `hosts.yaml.example` into
+  `~/.local/share/mu2edaq-cluster-tools/config/`, where the installed
+  `ssh-selector` finds them from any directory
+- Install `ssh-selector` and `lan-scan` launchers in `~/.local/bin/` (or
+  `~/bin/` if that exists and `~/.local/bin` does not)
+- Record everything it created in a manifest,
+  `~/.local/share/mu2edaq-cluster-tools/.mu2edaq-cluster-tools-install`
 
-If `~/.local/bin` is not yet on your `PATH`, the script will tell you what to add to your shell config.
+If the bin directory is not yet on your `PATH`, the script will tell you what to
+add to your shell config.
 
-To uninstall:
+Options (command line > environment > default):
+
+| Option | Environment | Default |
+|---|---|---|
+| `--prefix DIR` / `--install-dir DIR` | `MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR` | `~/.local/share/mu2edaq-cluster-tools` |
+| `--bin-dir DIR` | `MU2EDAQ_CLUSTER_TOOLS_BIN_DIR` | `~/.local/bin` or `~/bin` |
+| `--app-cmd NAME` | `MU2EDAQ_CLUSTER_TOOLS_APP_CMD` | `ssh-selector` |
+
+The generic `INSTALL_DIR` and `APP_CMD` variables used by earlier versions are
+ignored (with a warning). Unknown options are an error.
+
+```bash
+./install.sh --prefix /opt/mu2e/cluster-tools --bin-dir /opt/mu2e/bin
+```
+
+To uninstall (add the same `--prefix` if you used one):
 
 ```bash
 ./install.sh --uninstall
+```
+
+Uninstall removes only the entries listed in the manifest (the venv, the copied
+config files and the launchers it generated), then the directory if it is
+empty. It refuses a directory without the manifest, and never accepts `/`,
+`$HOME` or an empty path. Put personal host files in
+`~/.config/mu2edaq/cluster-tools/` rather than the install directory.
+
+### Development checkout
+
+`./bootstrap.sh` creates `venv/` in the checkout (it can be run from any
+directory) and installs the package into it: a regular install by default,
+or an editable install with the `dev` extra (pytest) with `--dev`.
+
+```bash
+./bootstrap.sh --dev && source venv/bin/activate && pytest
 ```
 
 ### Manual installation
@@ -128,6 +178,10 @@ ssh-selector
 # Specify a config file explicitly
 ssh-selector -c path/to/hosts.yaml
 
+# Limit "Check Users" to 4 simultaneous ssh connections (default 8; also
+# settable as SSH_SELECTOR_CHECK_CONCURRENCY or check_concurrency in the YAML)
+ssh-selector -c path/to/hosts.yaml --check-concurrency 4
+
 # Print the version
 ssh-selector --version
 ```
@@ -150,7 +204,7 @@ See `man/man1/ssh-selector.1` (`man ./man/man1/ssh-selector.1`) for full option 
 | `Enter` | Connect (interactive shell) |
 | `n` | Connect in a new terminal window |
 | `t` | Open SSH tunnel (prompts for ports) |
-| `c` | Check which users are logged in on the selected host |
+| `c` | Check how many users are logged in on every configured host |
 | `/` | Filter host list |
 | `r` | Renew Kerberos ticket (`kinit -R`) |
 | `A` | About screen |
@@ -160,7 +214,7 @@ See `man/man1/ssh-selector.1` (`man ./man/man1/ssh-selector.1`) for full option 
 
 ## Configuration
 
-Config files are YAML. There is a fully annotated config provided (See [`config/hosts.yaml.example`](config/hosts.yaml.example) for a fully annotated example), as well as a config for the MC-2 cluster.  I'll add one for the gpvms and other groups shortly.
+Config files are YAML. There is a fully annotated config provided (See [`config/hosts.yaml.example`](config/hosts.yaml.example) for a fully annotated example), as well as configs for the Mu2e DAQ cluster ([`config/mu2e_daq.yaml`](config/mu2e_daq.yaml)), the Mu2e offline machines ([`config/mu2e_offline.yaml`](config/mu2e_offline.yaml)), NOvA DAQ ([`config/nova_daq.yaml`](config/nova_daq.yaml)) and the Fermilab GPVMs ([`config/fnal_gpvm.yaml`](config/fnal_gpvm.yaml)).
 
 The general format is fairly self documenting.
 
@@ -238,7 +292,9 @@ Press `t` on any host to open a port-forward tunnel instead of a shell. You will
 - **Local port** — port on your machine to listen on
 - **Remote port** — port on the destination host to forward to
 
-The resulting command is `ssh -N -L <local>:localhost:<remote> [options] <host>`. Press `Ctrl+C` in the terminal to close the tunnel and return to the host selector.
+The resulting command is `ssh -N -o ExitOnForwardFailure=yes -L <local>:localhost:<remote> [options] <host>`. Press `Ctrl+C` in the terminal to close the tunnel and return to the host selector.
+
+If the local port is already forwarded by one of your background tunnels, or anything else is listening on it, the tunnel is not started and a dialog says so. Background tunnels stay in the Tunnels panel across later connections until you kill them (`k`) or quit; on `q` with tunnels running you are asked whether to stop them (`s`) or leave them running (`k`, PIDs are printed). A background tunnel that exits is removed from the panel and its `ssh` error output is shown.
 
 ## Kerberos support
 
@@ -255,11 +311,20 @@ Press `r` to renew the ticket principal via `kinit -R`. Tickets refresh automati
 `lan-scan` is a standalone companion utility (installed alongside `ssh-selector`) that probes the local network and reports which hosts respond, with their DNS name and IP address:
 
 ```bash
-lan-scan                              # auto-detect the local subnet and scan it
+lan-scan                              # auto-detect the local subnet (only if there is exactly one)
 lan-scan --network 192.168.1.0/24     # scan a specific subnet
-lan-scan --ports 22,80,443            # also try these TCP ports for hosts that filter ICMP ping
-lan-scan --no-dns --json              # skip reverse DNS, emit JSON instead of a table
+lan-scan -n 10.226.9.0/24 --ports 22,80,443   # also try these TCP ports for hosts that filter ICMP ping
+lan-scan -n 10.226.9.0/24 --no-dns --json     # skip reverse DNS, emit JSON instead of a table
+lan-scan -c config/lan-scan/lan_scan-mu2edaq-data.yaml -w 16 -r 10   # shipped profile, gentler pacing
 ```
+
+Safety limits (these run on production DAQ networks):
+
+- **Size:** networks with more than `--max-hosts` probe addresses (default 1024, i.e. a /22) are refused (exit 3) unless `--allow-large` is given, so a `/16` typo does not turn into a 65534-address sweep.
+- **Routable space:** globally routable networks (not RFC 1918 or other private/reserved space) are refused (exit 3) unless `--allow-routable` is given. The shipped `config/lan-scan/lan_scan-mu2edaq.yaml` targets the routable Fermilab subnet `131.225.245.0/24`, so it needs `--allow-routable` on every run; it is ICMP only, with 16 workers at 20 addresses/s.
+- **Pacing:** at most `--workers` probes in flight (default 64, max 256) and at most `--rate` addresses started per second (default 50; `0` = unlimited).
+- **Auto-detect:** loopback and link-local networks are ignored; if more than one network remains, `lan-scan` lists them (with interface names) and exits 1 instead of picking one. The network it does pick is named on stderr with its interface.
+- **Timeouts:** `--timeout` bounds the ping (Linux `ping -W` in whole seconds, rounded up; macOS `-W` and Windows `-w` in milliseconds), each TCP connect, and each reverse-DNS lookup (run in its own thread).
 
 Example output:
 
@@ -272,7 +337,7 @@ IP Address     DNS Name
 2 host(s) found.
 ```
 
-Defaults (network, timeout, worker count, fallback ports) can be set in a YAML file passed via `--config` — see `config/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, and `LAN_SCAN_PORTS` environment variables. See `man/man1/lan-scan.1` (`man ./man/man1/lan-scan.1`) for full option details.
+Defaults (network, timeout, workers, rate, max_hosts, allow_large, allow_routable, fallback ports, no_dns) can be set in a YAML file passed via `--config` — see `config/lan-scan/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, `LAN_SCAN_RATE`, `LAN_SCAN_MAX_HOSTS`, `LAN_SCAN_ALLOW_LARGE`, `LAN_SCAN_ALLOW_ROUTABLE`, `LAN_SCAN_PORTS` and `LAN_SCAN_NO_DNS` environment variables; commandline options override both (commandline > environment > config file > default). lan-scan profiles live in `config/lan-scan/` so that `ssh-selector`, which offers every `*.yaml` in `./` and `./config/`, does not list them as host files. `lan-scan --version` and `ssh-selector --version` both report the single package version in `src/mu2edaq_cluster_tools/_version.py`. See `man/man1/lan-scan.1` (`man ./man/man1/lan-scan.1`) for full option details.
 
 ## Other Stuff
 

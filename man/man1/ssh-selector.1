@@ -5,6 +5,8 @@ ssh\-selector \- terminal UI for picking and connecting to SSH hosts
 .B ssh\-selector
 .RB [ \-c
 .IR FILE ]
+.RB [ \-\-check\-concurrency
+.IR N ]
 .br
 .B ssh\-selector
 .BR \-\-version | \-h
@@ -29,7 +31,9 @@ command for its first user, the output of
 .BR klist (1)
 refreshed every 60 s with expiry colouring (green over 2 h, yellow under,
 red expired), the local hostname, IP and IPv4 subnets, and the background
-tunnels started in this session.
+tunnels started since
+.B ssh\-selector
+was launched (they stay listed across connections).
 .PP
 At start-up every hostname is resolved with
 .BR gethostbyname (3);
@@ -42,13 +46,32 @@ Choosing a host (Enter) leaves the UI and runs
 .B ssh
 in the current terminal; when the session ends the UI comes back.
 .BR ssh 's
-own standard error is captured during the session and shown in a dialog if
-it exits non-zero, so its warnings are not visible while the session runs.
+standard error is passed through to the terminal as it is written, so its
+warnings are seen during the session; the last 8 KiB are also kept.
+If
+.B ssh
+exits with status 255 (its own failure: name resolution, connection,
+authentication, jump host) that text is shown in the "SSH Connection Failed"
+dialog when the UI comes back.
+Any other status is the remote shell's and raises no dialog.
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " \fIFILE\fR"
 YAML host file.
-Skips discovery.
+Overrides
+.B SSH_SELECTOR_CONFIG
+and skips discovery.
+.TP
+.BI \-\-check\-concurrency " N"
+Maximum number of
+.B ssh
+processes "Check Users" runs at once (a positive integer).
+Overrides
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+and the
+.B check_concurrency
+config key.
+Default 8.
 .TP
 .B \-\-version
 Print
@@ -59,26 +82,58 @@ and exit.
 .BR \-h ", " \-\-help
 Show help and exit.
 .SH CONFIG FILE DISCOVERY
-Without
-.BR \-c ,
-every
+The host file is chosen by the first of these that applies:
+.IP 1. 4
+.B \-c
+.IR FILE .
+.IP 2. 4
+.BR SSH_SELECTOR_CONFIG ,
+a file path; a leading
+.I ~
+is expanded.
+.IP 3. 4
+Discovery.
+Directories are searched in tiers; the first tier holding any
 .I *.yaml
-file in
+file supplies all candidates and later tiers are not consulted:
+.RS
+.IP a. 3
 .I ./
-and then
+and
 .I ./config/
-is a candidate (relative to the current directory; duplicates by real path are
-dropped).
+(relative to the current directory, merged in that order);
+.IP b. 3
+.IR $XDG_CONFIG_HOME/mu2edaq/cluster\-tools/ ,
+by default
+.IR ~/.config/mu2edaq/cluster\-tools/ ;
+.IP c. 3
+.IR <install\ dir>/config/ ,
+where the install directory is
+.B MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR
+if set, else the parent of the running venv when it carries the
+.BR install.sh (1)
+marker file
+.IR .mu2edaq\-cluster\-tools\-install .
+.RE
+.PP
+Duplicates by real path are dropped.
 One candidate is loaded directly; several are offered in a picker; none is an
-error.
-No other directory and no environment variable is searched.
-In this repository's
-.I config/
-the picker also lists the
+error that lists the directories searched.
+A file named by
+.B \-c
+or
+.B SSH_SELECTOR_CONFIG
+that does not exist is an error; there is no fallback to discovery.
+.PP
+.I *.yml
+and
+.I *.yaml.example
+files are not candidates.
+Any other
+.I *.yaml
+file in a searched directory is, so keep non-host YAML (for example
 .B lan\-scan
-profiles, which have no
-.B hosts
-key and stop with "No hosts defined".
+profiles) out of them; such a file stops with "No hosts defined".
 .SH CONFIGURATION
 Top-level keys:
 .TP
@@ -121,6 +176,14 @@ Default 600.
 .B panel_width
 Width of the right-hand panel in columns.
 Default 50.
+.TP
+.B check_concurrency
+Maximum simultaneous "Check Users" connections.
+Default 8.
+Overridden by
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+and
+.BR \-\-check\-concurrency .
 .PP
 The user
 .B default
@@ -137,7 +200,7 @@ The resulting commands are
 .RS
 .nf
 ssh [\-p PORT] [\-J JUMPUSER@JUMPHOST] \-l USER HOST
-ssh \-N \-L LOCAL:localhost:REMOTE [\-p PORT] [\-J ...] \-l USER HOST
+ssh \-N \-o ExitOnForwardFailure=yes \-L LOCAL:localhost:REMOTE [\-p PORT] [\-J ...] \-l USER HOST
 .fi
 .RE
 .PP
@@ -154,37 +217,71 @@ A user picker appears when the host has more than one user.
 .B n
 Connect in a new terminal window: Terminal.app via
 .BR osascript (1)
-on macOS; otherwise the first of
+on macOS; on Linux and other Unix systems the first of
 .BR gnome\-terminal ,
 .BR xfce4\-terminal ,
 .BR konsole ,
 .B xterm
 found on
-.BR PATH .
+.B PATH
+(looked up in-process, not with
+.BR which (1)),
+given the
+.B ssh
+command as separate arguments
+.RB ( "gnome\-terminal \-\-" ,
+.BR "xfce4\-terminal \-x" ,
+.BR "konsole \-e" ,
+.BR "xterm \-e" );
+on Windows a new console window running
+.BR ssh .
 The host list is then rebuilt, as after a foreground session.
 .TP
 .B t
 Port-forward tunnel.
 Prompts for a local and a remote port (1\-65535) and a background switch
 (default on).
+Before starting, the local port is checked: if a background tunnel of this
+session already forwards it, or anything else is listening on 127.0.0.1 or ::1
+at that port, the tunnel is not started and a dialog says why.
 In the background the tunnel is a child
 .B ssh \-N
-process listed in the Tunnels panel; in the foreground the UI exits, the
-tunnel runs until Ctrl-C, and the UI comes back.
+process in its own session (so Ctrl-C in a later foreground session does not
+reach it), listed in the Tunnels panel for the life of the
+.B ssh\-selector
+process, including after Enter, n or a foreground t rebuild the UI.
+Its standard error goes to a temporary log file; if the tunnel exits (for
+example a forward that cannot be bound, which
+.B ExitOnForwardFailure=yes
+turns into an exit), it is removed from the panel and a dialog shows its exit
+status and the end of that log.
+In the foreground the UI exits, the tunnel runs until Ctrl-C, and the UI
+comes back.
 .TP
 .B c
 "Check Users": runs
 .B ssh \-o BatchMode=yes \-o ConnectTimeout=5 ... who
 against
 .I every
-host in the file at once, as each host's first user and through its jump host,
+host in the file, as each host's first user and through its jump host,
 and shows the number of lines
 .B who
-prints (12 s limit per host).
+prints.
+At most
+.B check_concurrency
+(default 8, below OpenSSH's default
+.B MaxStartups
+of 10) connections run at once; the rest wait.
+Each probe has a 12 s limit, after which its
+.B ssh
+is killed and the host is shown as unreachable; a non-zero
+.B ssh
+exit is also shown as unreachable.
 Results are reused for
 .B cache_lifetime
-seconds.
-There is no limit on concurrent connections.
+seconds, and pressing
+.B c
+again while a check is running does not start a second probe of the same host.
 .TP
 .B /
 Focus the filter field.
@@ -199,6 +296,17 @@ About screen.
 .TP
 .B q
 Quit.
+If background tunnels are running, a dialog lists them and asks:
+.B s
+(or
+.BR y )
+stops them and quits,
+.B k
+leaves them running and quits (their PIDs and log files are printed),
+.B Escape
+(or
+.BR n )
+returns to the host list.
 .TP
 .B Left\fR, \fBRight
 Move between the two hosts of a row.
@@ -215,23 +323,60 @@ sends SIGTERM to the highlighted background tunnel.
 .SH FILES
 .TP
 .I ./*.yaml\fR, \fI./config/*.yaml
-Discovered host files.
+Discovered host files, first tier.
+.TP
+.I ~/.config/mu2edaq/cluster\-tools/*.yaml
+Per-user host files, second tier
+(under
+.B $XDG_CONFIG_HOME
+when set).
+.TP
+.I ~/.local/share/mu2edaq\-cluster\-tools/config/*.yaml
+Topology files copied by
+.BR install.sh (1)
+(default install directory), third tier.
 .TP
 .I config/mu2e_daq.yaml
 Mu2e DAQ topology (75 hosts in 13 groups).
 .TP
-.I config/nova_daq.yaml\fR, \fIconfig/mu2e_offline.yaml\fR, \fIconfig/fnal_gpmv.yaml
+.I config/nova_daq.yaml\fR, \fIconfig/mu2e_offline.yaml\fR, \fIconfig/fnal_gpvm.yaml
 NOvA DAQ, Mu2e offline and Fermilab GPVM host lists.
 .TP
 .I config/hosts.yaml.example\fR, \fIconfig/example.yaml
 Annotated examples.
 .SH ENVIRONMENT
 .TP
+.B SSH_SELECTOR_CONFIG
+Host file to load when
+.B \-c
+is not given.
+.TP
+.B XDG_CONFIG_HOME
+Base of the per-user config directory (default
+.IR ~/.config ).
+.TP
+.B MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR
+Install directory whose
+.I config/
+is the last discovery tier; also read by
+.BR install.sh (1).
+.TP
 .B USER
 Login name used for the
 .B default
 user (falls back to
 .BR getpass.getuser ()).
+.TP
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+Maximum simultaneous "Check Users" connections; overrides the
+.B check_concurrency
+config key and is overridden by
+.BR \-\-check\-concurrency .
+.TP
+.B TMPDIR
+Directory for the background tunnels' standard-error logs
+.RI ( ssh\-selector\-tunnel\-PORT\-*.log ),
+deleted when the tunnel is stopped or reported.
 .TP
 .B KRB5CCNAME
 Not read directly; honoured by
@@ -247,7 +392,11 @@ Quit from the host list or the config picker.
 .B 1
 No config file found, the
 .B \-c
-file does not exist, the file fails to load, or it defines no hosts.
+or
+.B SSH_SELECTOR_CONFIG
+file does not exist, the file fails to load, it defines no hosts, or the
+check concurrency from the command line, environment or file is not a positive
+integer.
 .TP
 .B 2
 Invalid command line.
@@ -255,23 +404,18 @@ Invalid command line.
 .RS
 .nf
 ssh\-selector \-c config/mu2e_daq.yaml
+ssh\-selector \-c config/nova_daq.yaml \-\-check\-concurrency 4
+SSH_SELECTOR_CHECK_CONCURRENCY=2 ssh\-selector
 cd ~/clusters && ssh\-selector        # pick among ./*.yaml
+SSH_SELECTOR_CONFIG=~/hosts.yaml ssh\-selector
+mkdir \-p ~/.config/mu2edaq/cluster\-tools && cp hosts.yaml ~/.config/mu2edaq/cluster\-tools/
 .fi
 .RE
 .SH BUGS
-Background tunnels belong to one run of the UI.
-After Enter, n or a foreground t the UI is rebuilt with an empty Tunnels panel,
-and on quit the tunnels keep running; neither case stops them.
-They are started without
-.BR "ExitOnForwardFailure=yes" ,
-so a new tunnel whose local port is still held by an old one stays up,
-forwards nothing, and is listed as alive.
-.PP
-.B xfce4\-terminal \-e
-expects one string but is given the command as separate words.
-On Windows the new-terminal path calls
-.BR which ,
-which does not exist there.
+Background tunnels are stopped when
+.B ssh\-selector
+exits normally or receives SIGHUP or SIGTERM, unless the user chose to keep
+them at quit; a SIGKILL leaves them running.
 .SH KERBEROS SUPPORT
 Ticket display and renewal need
 .B klist

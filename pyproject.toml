@@ -48,4 +48,4 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.dynamic]
-version = { attr = "mu2edaq_cluster_tools.ssh_selector.__version__" }
+version = { attr = "mu2edaq_cluster_tools._version.__version__" }

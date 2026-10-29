@@ -10,7 +10,7 @@ doc_dir: docs
 summary: >
   Operator workstation tools for reaching DAQ nodes, a Textual SSH host picker
   (ssh-selector) driven by YAML topology files for Mu2e DAQ, Mu2e offline,
-  NOvA DAQ and Fermilab GPVMs, plus lan-scan, an unthrottled ICMP and
+  NOvA DAQ and Fermilab GPVMs, plus lan-scan, a rate-limited, size-bounded ICMP and
   TCP-connect sweep of one IPv4 subnet
 languages: [python, shell]
 loc: 3595
@@ -32,21 +32,21 @@ runtime:
   services: []
   ports:
     - {port: 22, proto: tcp, role: ssh-destination-default, source: "src/mu2edaq_cluster_tools/ssh_selector.py:67"}
-    - {port: 22, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:17"}
-    - {port: 80, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:18"}
-    - {port: 443, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan_scan-mu2edaq.yaml:19"}
+    - {port: 22, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan-scan/lan_scan-mu2edaq-data.yaml:14"}
+    - {port: 80, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan-scan/lan_scan-mu2edaq-data.yaml:15"}
+    - {port: 443, proto: tcp, role: lan-scan-tcp-fallback-probe-shipped-profiles, source: "config/lan-scan/lan_scan-mu2edaq-data.yaml:16"}
   config_files:
     - config/mu2e_daq.yaml
     - config/mu2e_offline.yaml
     - config/nova_daq.yaml
-    - config/fnal_gpmv.yaml
+    - config/fnal_gpvm.yaml
     - config/example.yaml
     - config/hosts.yaml.example
-    - config/lan_scan-mu2edaq.yaml
-    - config/lan_scan-mu2edaq-data.yaml
-    - config/lan_scan-mu2edaq-ipmi.yaml
-    - config/lan_scan.yaml.example
-  env_vars: [LAN_SCAN_NETWORK, LAN_SCAN_TIMEOUT, LAN_SCAN_WORKERS, LAN_SCAN_PORTS, USER, INSTALL_DIR, APP_CMD, PYTHON]
+    - config/lan-scan/lan_scan-mu2edaq.yaml
+    - config/lan-scan/lan_scan-mu2edaq-data.yaml
+    - config/lan-scan/lan_scan-mu2edaq-ipmi.yaml
+    - config/lan-scan/lan_scan.yaml.example
+  env_vars: [LAN_SCAN_NETWORK, LAN_SCAN_TIMEOUT, LAN_SCAN_WORKERS, LAN_SCAN_RATE, LAN_SCAN_MAX_HOSTS, LAN_SCAN_ALLOW_LARGE, LAN_SCAN_ALLOW_ROUTABLE, LAN_SCAN_PORTS, LAN_SCAN_NO_DNS, USER, INSTALL_DIR, APP_CMD, PYTHON]
 
 interactions:
   depends_on: []
