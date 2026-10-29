@@ -1929,7 +1929,7 @@ class TunnelPanel(Widget):
 # Main TUI application
 # ---------------------------------------------------------------------------
 
-# App result: a ConnectionRequest, or None if the user quit.
+## App result: a ConnectionRequest, or None if the user quit.
 AppResult = Optional[ConnectionRequest]
 
 
@@ -1974,8 +1974,8 @@ class SSHSelector(App[AppResult]):
 
     @par Thread affinity
     Every method of this class runs on the Textual asyncio event loop.  The
-    workers started with run_worker() are async coroutines (not @work
-    threads), so they may touch widgets and instance state directly without
+    workers started with run_worker() are async coroutines (not threads from
+    Textual's work decorator), so they may touch widgets and instance state directly without
     call_from_thread().  Blocking calls are pushed off the loop explicitly:
     gethostbyname via loop.run_in_executor(), and ssh/kinit via
     asyncio.create_subprocess_exec().  Any future thread worker must use
@@ -1987,8 +1987,8 @@ class SSHSelector(App[AppResult]):
     @see main(), TunnelRegistry, ConnectionRequest, _install_tunnel_shutdown()
     """
 
-    # Layout: search bar on top; host list (flexible width) on the left; a
-    # fixed-width right column (width overridden from config.panel_width in
+    ## Layout: search bar on top; host list (flexible width) on the left; a
+    ## fixed-width right column (width overridden from config.panel_width in
     # on_mount) stacking detail / Kerberos / network / tunnel panels.  The
     # panel heights are percentages of the right column and sum to 100%.
     CSS = """
@@ -2150,8 +2150,8 @@ class SSHSelector(App[AppResult]):
     }
     """
 
-    # App-level key bindings shown in the Footer.  Bindings on a focused
-    # widget (e.g. TunnelPanel's k/Delete, Input editing keys) take
+    ## App-level key bindings shown in the Footer.  Bindings on a focused
+    ## widget (e.g. TunnelPanel's k/Delete, Input editing keys) take
     # precedence, which is why "q" and "c" are inert while typing in the
     # search bar.
     BINDINGS = [
@@ -2193,33 +2193,42 @@ class SSHSelector(App[AppResult]):
                         private registry (used by tests).
         """
         super().__init__()
+        ## Every host from the config, in file order; never filtered.
         self.all_hosts = config.hosts
+        ## Group display order from the config's grouplist key.
         self.grouplist = config.grouplist
+        ## Hosts matching the current search text, in display order.
         self.filtered_hosts: list[Host] = list(config.hosts)
+        ## Host under the cursor, or None when the filtered list is empty.
         self._selected_host: Optional[Host] = config.hosts[0] if config.hosts else None
         self._startup_error = error
+        ## Cursor column in the two-column host list: 0 left, 1 right.
         self._column: int = 0   # 0 = left, 1 = right (two-column list)
-        # Three-state DNS cache: the "absent" state drives the "resolving…"
-        # text in the detail panel, distinct from a failed lookup.
+        ## Three-state DNS cache: the "absent" state drives the "resolving…"
+        ## text in the detail panel, distinct from a failed lookup.
         # hostname → resolved IP (None = lookup failed, key absent = not yet checked)
         self._host_ips: dict[str, Optional[str]] = {}
+        ## IPv4 networks of this workstation, used to decide when the proxy jump can be skipped.
         self._local_networks: list[ipaddress.IPv4Network] = []
+        ## Seconds a cached user count stays fresh (config cache_lifetime).
         self._cache_lifetime: int = config.cache_lifetime
+        ## Width in cells of the right-hand detail column (config panel_width).
         self._panel_width: int = config.panel_width
-        # hostname → (count, monotonic timestamp); key absent = never fetched
-        # count None = probe failed (unreachable, auth refused, timeout).
+        ## hostname → (count, monotonic timestamp); key absent = never fetched
+        ## count None = probe failed (unreachable, auth refused, timeout).
         # time.monotonic() so wall-clock jumps (NTP, DST) cannot make an
         # entry look fresh forever or expire instantly.
         self._user_counts: dict[str, tuple[Optional[int], float]] = {}
-        # Bounded below sshd's MaxStartups (default 10:30:100) because all
-        # probes to hosts behind the same proxy_jump arrive at that gateway's
+        ## Bounded below sshd's MaxStartups (default 10:30:100) because all
+        ## probes to hosts behind the same proxy_jump arrive at that gateway's
         # sshd as concurrent unauthenticated connections; above the start
         # value sshd begins randomly dropping them.  See
         # DEFAULT_CHECK_CONCURRENCY.
         self._check_concurrency: int = config.check_concurrency
+        ## Hostnames with a Check Users probe running, so a second press of c does not probe them twice.
         self._checks_in_flight: set[str] = set()
-        # Shared with main() so tunnels outlive this UI instance: the app is
-        # torn down and rebuilt around every foreground ssh session, but a
+        ## Shared with main() so tunnels outlive this UI instance: the app is
+        ## torn down and rebuilt around every foreground ssh session, but a
         # background port-forward must keep running through that.
         self._tunnels: TunnelRegistry = tunnels if tunnels is not None else TunnelRegistry()
 
@@ -2269,15 +2278,15 @@ class SSHSelector(App[AppResult]):
         self._update_detail(self._selected_host)
         self.query_one("#list").focus()
         if self._startup_error:
-            # Deferred until after the first refresh so the modal stacks on
-            # top of a fully laid-out screen rather than racing compose.
+            ## Deferred until after the first refresh so the modal stacks on
+            ## top of a fully laid-out screen rather than racing compose.
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
         # Both are async workers on the event loop; exclusive=False so they
         # run side by side and are not cancelled by each other.
         self.run_worker(self._resolve_all_hosts(), exclusive=False)
         self.run_worker(self._load_local_networks(), exclusive=False)
-        # Tunnels started by a previous instance are already in the shared
-        # registry; show them and report any that died while the UI was
+        ## Tunnels started by a previous instance are already in the shared
+        ## registry; show them and report any that died while the UI was
         # down (e.g. during a foreground ssh session).
         self.call_after_refresh(self._refresh_tunnel_panel)
         self.call_after_refresh(self._cleanup_dead_tunnels)
@@ -2833,7 +2842,7 @@ class SSHSelector(App[AppResult]):
 
         Case-insensitive substring match on nickname or hostname.
 
-        @param event  Input.Changed event from #search-bar.
+        @param event  Input.Changed event from the search-bar Input.
         """
         query = event.value.strip().lower()
         if query:
@@ -2889,8 +2898,8 @@ class SSHSelector(App[AppResult]):
                  ports after ssh-selector exits; they must be killed by PID.
         @see _install_tunnel_shutdown(), _report_kept_tunnels()
         """
-        # Pressing q again while the question is showing must not stack a
-        # second modal.
+        ## Pressing q again while the question is showing must not stack a
+        ## second modal.
         if isinstance(self.screen, QuitTunnelsModal):
             return   # already asking
         live = self._tunnels.alive()
@@ -3125,11 +3134,11 @@ class SSHSelector(App[AppResult]):
 # Config file discovery and selection
 # ---------------------------------------------------------------------------
 
-#: Environment variable naming a host file; used when -c is not given.
+##: Environment variable naming a host file; used when -c is not given.
 CONFIG_ENV_VAR = "SSH_SELECTOR_CONFIG"
-#: Environment variable naming the install.sh install directory (shared with install.sh).
+##: Environment variable naming the install.sh install directory (shared with install.sh).
 INSTALL_DIR_ENV_VAR = "MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR"
-#: Marker/manifest file that install.sh writes at the top of its install directory.
+##: Marker/manifest file that install.sh writes at the top of its install directory.
 INSTALL_MARKER = ".mu2edaq-cluster-tools-install"
 
 
@@ -3273,6 +3282,7 @@ class ConfigItem(ListItem):
         @param path  Host file shown and returned on selection.
         """
         super().__init__()
+        ## Config file this list entry selects.
         self.path = path
 
     def compose(self) -> ComposeResult:
@@ -3299,7 +3309,7 @@ class ConfigSelectApp(App[Optional[Path]]):
     Runs on the main thread; all methods are Textual event handlers.
     """
 
-    # Textual CSS: a single bordered list filling the screen.
+    ## Textual CSS: a single bordered list filling the screen.
     CSS = """
     Screen {
         layout: vertical;
@@ -3332,6 +3342,7 @@ class ConfigSelectApp(App[Optional[Path]]):
     }
     """
 
+    ## App-level key bindings: q quits without choosing a file.
     BINDINGS = [
         Binding("q", "quit", "Quit"),
     ]
@@ -3342,6 +3353,7 @@ class ConfigSelectApp(App[Optional[Path]]):
         @param paths  Candidate host files from find_config_files(), in display order.
         """
         super().__init__()
+        ## Candidate host files, in display order.
         self.paths = paths
 
     def compose(self) -> ComposeResult:
@@ -3376,8 +3388,8 @@ class ConfigSelectApp(App[Optional[Path]]):
 # Entry point
 # ---------------------------------------------------------------------------
 
-# Terminal emulators tried on Linux/BSD, in preference order.  Each prefix
-# must take the *remaining argv* as the command (not a single shell string):
+## Terminal emulators tried on Linux/BSD, in preference order.  Each prefix
+## must take the *remaining argv* as the command (not a single shell string):
 # gnome-terminal "--", xfce4-terminal "-x" ("-e" takes one string),
 # konsole "-e" and xterm "-e" (both consume all following arguments).
 # Passing argv rather than a string avoids a shell round-trip, so host names
@@ -3456,11 +3468,11 @@ def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
     print(f"Warning: no supported terminal emulator found. Run manually:\n  {' '.join(cmd)}")
 
 
-# ssh exits with 255 when ssh itself fails (resolution, connect, auth, proxy
-# jump); any other status is the remote command's / login shell's own.
+## ssh exits with 255 when ssh itself fails (resolution, connect, auth, proxy
+## jump); any other status is the remote command's / login shell's own.
 SSH_ERROR_STATUS = 255
-# Bytes of ssh's stderr kept for the error dialog.
-# 8 KiB holds the full diagnostic of a failed multi-hop connection (ProxyJump
+## Bytes of ssh's stderr kept for the error dialog.
+## 8 KiB holds the full diagnostic of a failed multi-hop connection (ProxyJump
 # errors, host-key warnings) while bounding memory for chatty sessions.
 _STDERR_TAIL_BYTES = 8192
 

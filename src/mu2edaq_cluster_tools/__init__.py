@@ -21,6 +21,6 @@ The package root re-exports only `__version__`.
 # Textual for every entry point, including lan-scan, which does not use it.
 from ._version import __version__
 
-# Limit `from mu2edaq_cluster_tools import *` to the version, so that a
-# wildcard import cannot pull in a submodule (and Textual) by accident.
+## Limit `from mu2edaq_cluster_tools import *` to the version, so that a
+## wildcard import cannot pull in a submodule (and Textual) by accident.
 __all__ = ["__version__"]

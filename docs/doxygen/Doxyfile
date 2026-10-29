@@ -34,7 +34,7 @@ INPUT                  = README.md \
                          docs/doxygen/bash-filter.sh
 USE_MDFILE_AS_MAINPAGE = README.md
 RECURSIVE              = YES
-EXCLUDE_PATTERNS       = */__pycache__/* */venv/* */.claude/*
+EXCLUDE_PATTERNS       = */__pycache__/* */venv/*
 FILTER_PATTERNS        = *.sh=docs/doxygen/bash-filter.sh
 FILTER_SOURCE_FILES    = NO
 EXTRACT_ALL            = YES

@@ -57,36 +57,39 @@ import yaml
 
 from mu2edaq_cluster_tools._version import __version__
 
-# Per-probe timeout in seconds. One second is ample on a LAN (RTT well under
-# 1 ms) and is also the smallest value Linux iputils can express (see
+## Per-probe timeout in seconds. One second is ample on a LAN (RTT well under
+## 1 ms) and is also the smallest value Linux iputils can express (see
 # ping_command), so a smaller default would buy nothing there.
 DEFAULT_TIMEOUT = 1.0
-# Concurrent probes. A probe is mostly a blocked ping child process, so the
-# cost is processes, not CPU; 64 keeps a /24 sweep to a few seconds.
+## Concurrent probes. A probe is mostly a blocked ping child process, so the
+## cost is processes, not CPU; 64 keeps a /24 sweep to a few seconds.
 DEFAULT_WORKERS = 64
-# Hard ceiling on workers: each worker can own a ping child process, and
-# hundreds of simultaneous forks hit per-user process limits on shared hosts.
+## Hard ceiling on workers: each worker can own a ping child process, and
+## hundreds of simultaneous forks hit per-user process limits on shared hosts.
 MAX_WORKERS = 256
-# Addresses started per second across all workers (0 = unlimited).
-# 50/s finishes a /24 in about 5 s while keeping the ARP/ICMP burst small
+## Addresses started per second across all workers (0 = unlimited).
+## 50/s finishes a /24 in about 5 s while keeping the ARP/ICMP burst small
 # enough not to trip switch storm control or IDS sweep detectors.
 DEFAULT_RATE = 50.0
-# Largest scan accepted without --allow-large: 1024 probed addresses (a /22
-# minus network and broadcast is 1022, so a /22 passes and a /21 does not).
+## Largest scan accepted without --allow-large: 1024 probed addresses (a /22
+## minus network and broadcast is 1022, so a /22 passes and a /21 does not).
 DEFAULT_MAX_HOSTS = 1024
-# Extra time given to the ping subprocess (start-up, teardown) before it is killed.
+## Extra time given to the ping subprocess (start-up, teardown) before it is killed.
 PING_GRACE = 0.5
 
-# Exit codes are part of the CLI contract (scripts and the man page rely on
-# them), so they are named once here rather than written as literals.
+## Exit codes are part of the CLI contract (scripts and the man page rely on
+## them), so they are named once here rather than written as literals.
 EXIT_NO_NETWORK = 1
+## Exit status for an invalid option value from any source (CLI, environment, YAML).
 EXIT_USAGE = 2
+## Exit status when a scan is refused by the size or routable-network safety limits.
 EXIT_REFUSED = 3
 
-# Accepted spellings for boolean environment variables and config values.
-# Anything else is rejected rather than read as False, so a typo such as
+## Accepted spellings for boolean environment variables and config values.
+## Anything else is rejected rather than read as False, so a typo such as
 # LAN_SCAN_ALLOW_LARGE=ture is reported instead of silently ignored.
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
+## Accepted spellings of false; see _TRUE_STRINGS.
 _FALSE_STRINGS = {"0", "false", "no", "off"}
 
 
@@ -481,11 +484,15 @@ class RateLimiter:
         @param clock  Monotonic time source in seconds (injected by tests).
         @param sleep  Sleep function (injected by tests to avoid real waits).
         """
+        ## Seconds between successive releases; 0.0 disables pacing.
         self.interval = 1.0 / rate if rate and rate > 0 else 0.0
+        ## Monotonic time source in seconds.
         self._clock = clock
+        ## Sleep function used to wait for the next release slot.
         self._sleep = sleep
+        ## Serializes slot reservation across worker threads.
         self._lock = threading.Lock()
-        # Time at which the next caller may be released; None before first use.
+        ## Time at which the next caller may be released; None before first use.
         self._next: Optional[float] = None
 
     def acquire(self) -> None:
