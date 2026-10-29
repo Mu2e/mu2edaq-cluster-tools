@@ -29,7 +29,7 @@ warn()    { echo "! $*" >&2; }
 die()     { echo "Error: $*" >&2; exit 1; }
 version() {
     sed -n 's/^__version__ = "\(.*\)"/\1/p' \
-        "${SCRIPT_DIR}/src/mu2edaq_cluster_tools/ssh_selector.py"
+        "${SCRIPT_DIR}/src/mu2edaq_cluster_tools/_version.py"
 }
 
 # ---------------------------------------------------------------------------
