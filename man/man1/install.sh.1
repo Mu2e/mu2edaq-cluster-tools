@@ -1,12 +1,21 @@
-.TH INSTALL.SH 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.TH INSTALL.SH 1 "2026-10-29" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
 .SH NAME
 install.sh \- per-user install of ssh\-selector and lan\-scan with launchers
 .SH SYNOPSIS
 .B ./install.sh
+.RB [ \-\-prefix
+.IR DIR ]
+.RB [ \-\-bin\-dir
+.IR DIR ]
+.RB [ \-\-app\-cmd
+.IR NAME ]
 .br
 .B ./install.sh \-\-uninstall
+.RB [ \-\-prefix
+.IR DIR ]
 .br
-.B ./install.sh \-\-version
+.B ./install.sh
+.BR \-\-version | \-h | \-\-help
 .SH DESCRIPTION
 Finds the first of
 .BR python3 ,
@@ -18,52 +27,149 @@ Finds the first of
 on
 .B PATH
 that is 3.9 or newer; creates or updates a venv in
-.BR $INSTALL_DIR/venv ;
-installs this checkout into it; copies
-.I config/hosts.yaml.example
-to
-.IR $INSTALL_DIR/config/ ;
+.IR DIR/venv ;
+installs this checkout into it; copies the topology files
+.IR mu2e_daq.yaml ,
+.IR mu2e_offline.yaml ,
+.I nova_daq.yaml
+and
+.IR fnal_gpmv.yaml ,
+plus the annotated
+.IR hosts.yaml.example ,
+into
+.IR DIR/config/ ;
 and writes two launcher scripts,
-.B $APP_CMD
+.I NAME
+(default
+.BR ssh\-selector )
 and
 .BR lan\-scan ,
-into the first existing of
-.I ~/.local/bin
-and
-.I ~/bin
-(creating
-.I ~/.local/bin
-if neither exists).
-Existing launchers of those names are overwritten.
-It warns when that directory is not on
-.BR PATH .
-.PP
-None of the topology files is installed, and
-.BR ssh\-selector (1)
-looks for host files only in the current directory and its
-.IR config/ ,
-so the installed command needs
-.B \-c
-or a directory that holds the YAML.
-.SH OPTIONS
-Only the first argument is examined.
-Any other value, including a mistyped option, performs a normal install.
-.TP
-.B \-\-uninstall
-Run
-.B rm \-rf
-on
-.B $INSTALL_DIR
-and remove
-.B $APP_CMD
-and
+into the bin directory.
 .B lan\-scan
-from both
+profiles are not installed as host files.
+.PP
+The installed
+.BR ssh\-selector (1)
+finds
+.I DIR/config/*.yaml
+as its last discovery tier, so it runs from any directory without
+.BR \-c .
+Personal host files go in
+.IR ~/.config/mu2edaq/cluster\-tools/ ,
+which is searched first after the current directory.
+.SS Ownership and safety
+Before anything is created the script writes a manifest,
+.IR DIR/.mu2edaq\-cluster\-tools\-install ,
+listing every path it will create: one
+.RI \(dq kind \(rs t path \(dq
+line per entry, kinds
+.BR venv ,
+.B file
+and
+.BR launcher .
+.B \-\-uninstall
+removes only what that manifest lists, and only if
+.RS
+.IP \(bu 2
+a
+.B venv
+entry is exactly
+.IR DIR/venv ;
+.IP \(bu 2
+a
+.B file
+entry lies strictly inside
+.I DIR
+and contains no
+.IR .. ;
+.IP \(bu 2
+a
+.B launcher
+entry is a regular file carrying the
+.B install.sh
+generator tag and
+.B exec\-ing
+.IR DIR/venv/bin/ .
+.RE
+.PP
+Then the manifest is removed,
+.I DIR/config
+and
+.I DIR
+are removed with
+.BR rmdir (1)
+if empty, and anything else is left in place with a warning.
+A directory without the manifest is never touched.
+.PP
+Install and uninstall both refuse an empty
+.IR DIR ,
+.IR / ,
+.BR $HOME ,
+a small list of system directories, a path containing
+.I ..
+and a path containing a quote, dollar sign, backtick, backslash, tab or
+newline (the path is embedded in the launchers).
+Install refuses a non-empty
+.I DIR
+without the manifest, unless it holds exactly what
+.B install.sh
+1.0.1 and earlier created
+.RI ( venv/
+with an
+.B ssh\-selector
+entry point and
+.IR config/hosts.yaml.example ),
+which is adopted.
+It refuses to overwrite a launcher that it did not write for the same
+.IR DIR .
+Re-running the install updates the venv and configs in place and keeps
+launchers recorded by an earlier run (for example with another
+.BR \-\-bin\-dir )
+in the manifest.
+.SH OPTIONS
+Options override the matching environment variables, which override the
+defaults.
+Unknown options are an error (exit 2).
+.TP
+.BR \-\-prefix " \fIDIR\fR, " \-\-install\-dir " \fIDIR\fR"
+Install directory.
+Default
+.IR ~/.local/share/mu2edaq\-cluster\-tools .
+A relative path is taken relative to the current directory; a leading
+.I ~
+is expanded.
+.TP
+.BI \-\-bin\-dir " DIR"
+Launcher directory, created if needed.
+Default: the first existing of
 .I ~/.local/bin
 and
 .IR ~/bin ,
-whoever wrote them.
-No confirmation.
+else
+.I ~/.local/bin
+(created).
+Ignored by
+.BR \-\-uninstall ,
+which uses the launcher paths in the manifest.
+.TP
+.BI \-\-app\-cmd " NAME"
+Name of the
+.B ssh\-selector
+launcher.
+Letters, digits,
+.BR . ,
+.B _
+and
+.B \-
+only.
+Default
+.BR ssh\-selector .
+.TP
+.B \-\-uninstall
+Remove what the manifest in
+.I DIR
+lists, as described above.
+No confirmation; the manifest is the guard.
 .TP
 .B \-\-version
 Print
@@ -72,49 +178,76 @@ Print
 (from
 .IR ssh_selector.py )
 and exit.
+.TP
+.BR \-h ", " \-\-help
+Print usage and exit.
 .SH ENVIRONMENT
 .TP
-.B INSTALL_DIR
-Install directory.
-Default
-.IR ~/.local/share/mu2edaq\-cluster\-tools .
-The name is generic: a value inherited from another tool's environment is
-used as is, and
-.B \-\-uninstall
-deletes it recursively.
+.B MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR
+Install directory, overridden by
+.BR \-\-prefix .
+Also read by
+.BR ssh\-selector (1)
+for its install-directory discovery tier.
 .TP
-.B APP_CMD
-Name of the
-.B ssh\-selector
-launcher.
-Default
-.BR ssh\-selector .
+.B MU2EDAQ_CLUSTER_TOOLS_BIN_DIR
+Launcher directory, overridden by
+.BR \-\-bin\-dir .
+.TP
+.B MU2EDAQ_CLUSTER_TOOLS_APP_CMD
+Launcher name, overridden by
+.BR \-\-app\-cmd .
+.TP
+.BR INSTALL_DIR ", " APP_CMD
+Read by
+.B install.sh
+1.0.1 and earlier.
+Now ignored, with a warning when set: the names are generic enough that
+build environments export them for their own purposes.
 .SH FILES
 .TP
-.I $INSTALL_DIR/venv/
+.I DIR/.mu2edaq\-cluster\-tools\-install
+Install manifest; marks
+.I DIR
+as created by this script.
+.TP
+.I DIR/venv/
 Private virtual environment.
 .TP
-.I $INSTALL_DIR/config/hosts.yaml.example
+.I DIR/config/*.yaml
+Topology files, discovered by
+.BR ssh\-selector .
+.TP
+.I DIR/config/hosts.yaml.example
 Annotated example.
 .TP
-.IR ~/.local/bin/ssh\-selector ", " ~/.local/bin/lan\-scan
+.IR BIN/ssh\-selector ", " BIN/lan\-scan
 Launchers that
 .B exec
 the venv's entry points.
 .SH EXIT STATUS
 .TP
 .B 0
-Success, including an uninstall that found nothing.
+Success, including an uninstall that found no
+.IR DIR .
 .TP
 .B 1
-No Python 3.9+, or any failing step
+No Python 3.9+, an unsafe or foreign
+.IR DIR ,
+a foreign launcher in the way, a missing manifest on uninstall, or any
+failing step
 .RB ( "set \-e" ).
+.TP
+.B 2
+Unknown option or missing option argument.
 .SH EXAMPLES
 .RS
 .nf
 \&./install.sh
-ssh\-selector \-c ~/Git/mu2edaq\-cluster\-tools/config/mu2e_daq.yaml
-\&./install.sh \-\-uninstall
+ssh\-selector                         # finds DIR/config/*.yaml
+\&./install.sh \-\-prefix /opt/mu2e/cluster\-tools \-\-bin\-dir /opt/mu2e/bin
+\&./install.sh \-\-uninstall \-\-prefix /opt/mu2e/cluster\-tools
+MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR=/tmp/ct ./install.sh \-\-bin\-dir /tmp/ct\-bin
 .fi
 .RE
 .SH SEE ALSO
