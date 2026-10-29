@@ -1,0 +1,55 @@
+# Doxyfile for mu2edaq-cluster-tools
+#
+# Generates HTML API documentation for the Python package and the Bash
+# installers. Run from the repository root:
+#
+#     mkdir -p build/doxygen
+#     doxygen docs/doxygen/Doxyfile
+#
+# Output goes to build/doxygen/html/index.html (build/ is git-ignored).
+# Doxygen creates only the last level of OUTPUT_DIRECTORY, so build/ must
+# exist before the run; a fresh checkout has no build/ directory.
+#
+# Comment conventions (see docs/doxygen/README.md):
+#   Python : docstrings that begin with """! carry Doxygen commands
+#            (@brief, @param, @return, @throws, @note, @see).
+#   Bash   : `##` comment blocks directly above a function, or at the top
+#            of the file with @file; docs/doxygen/bash-filter.sh turns
+#            function definitions into stubs Doxygen can attach them to.
+
+PROJECT_NAME           = "mu2edaq-cluster-tools"
+PROJECT_BRIEF          = "Operator SSH host selector and LAN scanner for Mu2e DAQ clusters"
+OUTPUT_DIRECTORY       = build/doxygen
+CREATE_SUBDIRS         = NO
+OPTIMIZE_OUTPUT_JAVA   = YES
+PYTHON_DOCSTRING       = YES
+JAVADOC_AUTOBRIEF      = YES
+EXTENSION_MAPPING      = sh=Python
+FILE_PATTERNS          = *.py *.sh *.md
+INPUT                  = README.md \
+                         docs/doxygen/README.md \
+                         src/mu2edaq_cluster_tools \
+                         install.sh \
+                         bootstrap.sh \
+                         docs/doxygen/bash-filter.sh
+USE_MDFILE_AS_MAINPAGE = README.md
+RECURSIVE              = YES
+EXCLUDE_PATTERNS       = */__pycache__/* */venv/*
+FILTER_PATTERNS        = *.sh=docs/doxygen/bash-filter.sh
+FILTER_SOURCE_FILES    = NO
+EXTRACT_ALL            = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_STATIC         = YES
+SOURCE_BROWSER         = YES
+INLINE_SOURCES         = NO
+REFERENCED_BY_RELATION = YES
+REFERENCES_RELATION    = YES
+GENERATE_HTML          = YES
+GENERATE_LATEX         = NO
+GENERATE_TREEVIEW      = YES
+HAVE_DOT               = NO
+QUIET                  = YES
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_ERROR      = YES
+WARN_LOGFILE           = build/doxygen/warnings.log
