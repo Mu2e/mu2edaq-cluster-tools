@@ -3,9 +3,12 @@
 # Generates HTML API documentation for the Python package and the Bash
 # installers. Run from the repository root:
 #
+#     mkdir -p build/doxygen
 #     doxygen docs/doxygen/Doxyfile
 #
 # Output goes to build/doxygen/html/index.html (build/ is git-ignored).
+# Doxygen creates only the last level of OUTPUT_DIRECTORY, so build/ must
+# exist before the run; a fresh checkout has no build/ directory.
 #
 # Comment conventions (see docs/doxygen/README.md):
 #   Python : docstrings that begin with """! carry Doxygen commands

@@ -9,6 +9,7 @@ installers into a browsable HTML reference.
 Install Doxygen 1.9 or later, then run from the repository root:
 
 ```sh
+mkdir -p build/doxygen    # Doxygen creates only the last path level
 doxygen docs/doxygen/Doxyfile
 open build/doxygen/html/index.html        # macOS
 xdg-open build/doxygen/html/index.html    # Linux
