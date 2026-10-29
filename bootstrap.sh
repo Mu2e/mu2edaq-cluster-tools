@@ -15,7 +15,7 @@ DEV=0
 
 version() {
     sed -n 's/^__version__ = "\(.*\)"/\1/p' \
-        "$HERE/src/mu2edaq_cluster_tools/ssh_selector.py"
+        "$HERE/src/mu2edaq_cluster_tools/_version.py"
 }
 
 for arg in "$@"; do

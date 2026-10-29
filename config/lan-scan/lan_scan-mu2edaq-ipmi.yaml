@@ -1,0 +1,17 @@
+# lan-scan - Mu2e DAQ IPMI network (private, 192.168.246.0/24)
+#
+# Use with: lan-scan -c config/lan-scan/lan_scan-mu2edaq-ipmi.yaml
+#
+# Keys, environment overrides and precedence are documented in
+# config/lan-scan/lan_scan.yaml.example and lan-scan(1).
+# Priority: commandline > environment > this file > built-in default.
+
+network: 192.168.246.0/24
+timeout: 1.0
+workers: 64
+rate: 50
+ports:
+  - 22
+  - 80
+  - 443
+no_dns: false
