@@ -24,6 +24,7 @@ grouplist:
   - Farm NearDet
   - Roc-West Control Room
   - Timing Controls
+  - DCS
 
 groups:
   Gateways:

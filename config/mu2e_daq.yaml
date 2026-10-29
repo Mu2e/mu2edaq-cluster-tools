@@ -141,6 +141,20 @@ groups:
       - mu2edcs
       - mu2etrk
 
+  # mu2e-stm-01/02 sit on the MC-2 lab network (131.225.245.0/24) behind the
+  # MC-2 gateways, like the other detector groups (see the mc2 location in
+  # mu2edaq-power-recovery/config/topology.yaml). There is no STM-specific
+  # account, so the user list follows Cosmic Ray Veto.
+  Stopping Target Monitor:
+    proxy_jump: mu2egateway01.fnal.gov
+    users:
+      - default
+      - mu2edaq
+      - mu2eshift
+      - mu2ecalo
+      - mu2edcs
+      - mu2etrk
+
   Test Stand:
     proxy_jump: mu2edaq-gateway.fnal.gov
     users:
