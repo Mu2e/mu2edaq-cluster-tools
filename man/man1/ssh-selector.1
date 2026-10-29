@@ -42,8 +42,14 @@ Choosing a host (Enter) leaves the UI and runs
 .B ssh
 in the current terminal; when the session ends the UI comes back.
 .BR ssh 's
-own standard error is captured during the session and shown in a dialog if
-it exits non-zero, so its warnings are not visible while the session runs.
+standard error is passed through to the terminal as it is written, so its
+warnings are seen during the session; the last 8 KiB are also kept.
+If
+.B ssh
+exits with status 255 (its own failure: name resolution, connection,
+authentication, jump host) that text is shown in the "SSH Connection Failed"
+dialog when the UI comes back.
+Any other status is the remote shell's and raises no dialog.
 .SH OPTIONS
 .TP
 .BR \-c ", " \-\-config " \fIFILE\fR"
@@ -154,13 +160,24 @@ A user picker appears when the host has more than one user.
 .B n
 Connect in a new terminal window: Terminal.app via
 .BR osascript (1)
-on macOS; otherwise the first of
+on macOS; on Linux and other Unix systems the first of
 .BR gnome\-terminal ,
 .BR xfce4\-terminal ,
 .BR konsole ,
 .B xterm
 found on
-.BR PATH .
+.B PATH
+(looked up in-process, not with
+.BR which (1)),
+given the
+.B ssh
+command as separate arguments
+.RB ( "gnome\-terminal \-\-" ,
+.BR "xfce4\-terminal \-x" ,
+.BR "konsole \-e" ,
+.BR "xterm \-e" );
+on Windows a new console window running
+.BR ssh .
 The host list is then rebuilt, as after a foreground session.
 .TP
 .B t
@@ -220,7 +237,7 @@ Discovered host files.
 .I config/mu2e_daq.yaml
 Mu2e DAQ topology (75 hosts in 13 groups).
 .TP
-.I config/nova_daq.yaml\fR, \fIconfig/mu2e_offline.yaml\fR, \fIconfig/fnal_gpmv.yaml
+.I config/nova_daq.yaml\fR, \fIconfig/mu2e_offline.yaml\fR, \fIconfig/fnal_gpvm.yaml
 NOvA DAQ, Mu2e offline and Fermilab GPVM host lists.
 .TP
 .I config/hosts.yaml.example\fR, \fIconfig/example.yaml
@@ -266,12 +283,6 @@ They are started without
 .BR "ExitOnForwardFailure=yes" ,
 so a new tunnel whose local port is still held by an old one stays up,
 forwards nothing, and is listed as alive.
-.PP
-.B xfce4\-terminal \-e
-expects one string but is given the command as separate words.
-On Windows the new-terminal path calls
-.BR which ,
-which does not exist there.
 .SH KERBEROS SUPPORT
 Ticket display and renewal need
 .B klist
