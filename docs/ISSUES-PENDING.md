@@ -3,7 +3,12 @@
 Findings from the September 2026 DAQ mega-review (`mu2e-sept-mega-review`),
 reviewed 2026-10-06 against `905d344`.
 
-**Why staged.** Per CONTRACT §9.1 no GitHub write was attempted. Each block
+**Filed 2026-10-29.** All ten entries were filed as GitHub issues on
+`Mu2e/mu2edaq-cluster-tools` (#6 through #15, in CLU order, labels
+`mega-review` plus category). #6 (CLU-001) was closed the same day by
+`79ae6d0`, merged in PR #5. Pre-existing #4 was closed as fixed by `905d344`.
+
+**Why staged.** Per CONTRACT §9.1 no GitHub write was attempted at review time. Each block
 below is the §6 issue body, parsed by `docs/mega-review/tools/stage_issues.py`.
 Route: `Mu2e/mu2edaq-cluster-tools` (public, issues enabled).
 
@@ -25,18 +30,18 @@ repository: Tracker 14, Calorimeter 8) is a Wave 2 cross-package item
 
 10 entries: 5 × S3, 5 × S4 (CLU-010 is a rollup).
 
-| ID | Sev | Category | rule_id | Fingerprint | Title |
-|---|---|---|---|---|---|
-| CLU-001 | S3 | bug | `mc1-proxy-jump-gateway` | `2c0b170b` | [topology] Farm MC1 jumps through mu2egateway01, but the MC1 enclave's ingress is g2gateway01 |
-| CLU-002 | S3 | bug | `check-users-unbounded-fanout` | `d9acc61d` | [ssh-selector] Check Users opens one SSH connection per configured host at once, all through the same jump host |
-| CLU-003 | S3 | enhancement | `scan-scope-unbounded` | `2df83ccb` | [lan-scan] no bound on scan size or rate, auto-detect scans whichever network is listed first, and a shipped profile targets a routable site subnet |
-| CLU-004 | S3 | bug | `orphaned-background-tunnels` | `f644c26b` | [ssh-selector] background tunnels leave the panel after any connection and survive quit; a reused local port silently keeps the old forward |
-| CLU-005 | S3 | bug | `uninstall-rmrf-generic-env` | `b7bba2a1` | [install] install.sh takes its target from the generic INSTALL_DIR variable and --uninstall deletes it recursively |
-| CLU-006 | S4 | bug | `version-mismatch` | `e39dde4b` | [version] lan-scan --version reports 1.0.0 while the package is 1.0.1 |
-| CLU-007 | S4 | bug | `probe-timeout-units` | `d1d3bf59` | [lan-scan] probe timeouts are not what --timeout says: Linux ping -W gets milliseconds, and the DNS timeout is global and ineffective |
-| CLU-008 | S4 | enhancement | `config-discovery-cwd-only` | `09709a54` | [config] ssh-selector looks for host files only under the current directory, and install.sh installs none |
-| CLU-009 | S4 | enhancement | `ci-matrix-missing-floor` | `0936c4c9` | [ci] CI matrix omits Python 3.9, the declared floor and the AlmaLinux 9 system Python |
-| CLU-010 | S4 | documentation | `minor-rollup` | `9a081a38` | [hygiene] minor findings from the 2026-10 review (rollup) |
+| ID | Issue | Sev | Category | rule_id | Fingerprint | Title |
+|---|---|---|---|---|---|---|
+| CLU-001 | #6 (closed) | S3 | bug | `mc1-proxy-jump-gateway` | `2c0b170b` | [topology] Farm MC1 jumps through mu2egateway01, but the MC1 enclave's ingress is g2gateway01 |
+| CLU-002 | #7 | S3 | bug | `check-users-unbounded-fanout` | `d9acc61d` | [ssh-selector] Check Users opens one SSH connection per configured host at once, all through the same jump host |
+| CLU-003 | #8 | S3 | enhancement | `scan-scope-unbounded` | `2df83ccb` | [lan-scan] no bound on scan size or rate, auto-detect scans whichever network is listed first, and a shipped profile targets a routable site subnet |
+| CLU-004 | #9 | S3 | bug | `orphaned-background-tunnels` | `f644c26b` | [ssh-selector] background tunnels leave the panel after any connection and survive quit; a reused local port silently keeps the old forward |
+| CLU-005 | #10 | S3 | bug | `uninstall-rmrf-generic-env` | `b7bba2a1` | [install] install.sh takes its target from the generic INSTALL_DIR variable and --uninstall deletes it recursively |
+| CLU-006 | #11 | S4 | bug | `version-mismatch` | `e39dde4b` | [version] lan-scan --version reports 1.0.0 while the package is 1.0.1 |
+| CLU-007 | #12 | S4 | bug | `probe-timeout-units` | `d1d3bf59` | [lan-scan] probe timeouts are not what --timeout says: Linux ping -W gets milliseconds, and the DNS timeout is global and ineffective |
+| CLU-008 | #13 | S4 | enhancement | `config-discovery-cwd-only` | `09709a54` | [config] ssh-selector looks for host files only under the current directory, and install.sh installs none |
+| CLU-009 | #14 | S4 | enhancement | `ci-matrix-missing-floor` | `0936c4c9` | [ci] CI matrix omits Python 3.9, the declared floor and the AlmaLinux 9 system Python |
+| CLU-010 | #15 | S4 | documentation | `minor-rollup` | `9a081a38` | [hygiene] minor findings from the 2026-10 review (rollup) |
 
 ---
 
