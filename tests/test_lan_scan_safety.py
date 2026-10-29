@@ -1,4 +1,16 @@
-"""Tests for lan-scan scan bounds, probe timeouts, profiles and version (#8, #11, #12, #15).
+"""!
+@file test_lan_scan_safety.py
+@brief Tests for lan-scan scan bounds, probe timeouts, profiles and version (GitHub issues #8, #11, #12, #15).
+
+- #8: rate limiting, bounded worker concurrency, lazy address generation,
+  deterministic interface auto-detection (refuses ambiguous choices), the
+  host-count (`--max-hosts`/`--allow-large`) and routable-network
+  (`--allow-routable`) guards, and the shipped profiles.
+- #11 and #15 item 10: a single version source, and importing lan_scan does
+  not load Textual.
+- #12: ping timeout units per platform and a per-lookup reverse-DNS timeout.
+- #15 item 6: lan-scan profiles live in config/lan-scan/.
+- Option precedence: commandline > environment > config file > default.
 
 No test sends a packet: ping, TCP, DNS and interface detection are all mocked.
 """
@@ -46,7 +58,11 @@ Ethernet adapter Ethernet 2:
 
 @pytest.fixture
 def clean_env(monkeypatch):
-    """Remove any LAN_SCAN_* variables from the test environment."""
+    """!
+    @brief Remove any LAN_SCAN_* variables from the test environment.
+    @param monkeypatch  pytest monkeypatch.
+    @return The same monkeypatch, so tests can set LAN_SCAN_* variables.
+    """
     for k in list(os.environ):
         if k.startswith("LAN_SCAN_"):
             monkeypatch.delenv(k)
@@ -54,7 +70,16 @@ def clean_env(monkeypatch):
 
 
 def _run(argv, interfaces=()):
-    """Run main() with scanning and detection mocked; return (exit_code, scan_mock)."""
+    """!
+    @brief Run main() with scanning and detection mocked; return (exit_code, scan_mock).
+
+    scan_network is replaced so guard tests can assert whether a scan would
+    have started and with which arguments.
+
+    @param argv        Commandline arguments for lan_scan.main().
+    @param interfaces  LocalInterface objects detect_local_interfaces() returns.
+    @return Tuple (exit code, scan_network mock).
+    """
     with patch.object(ls, "scan_network", return_value=[]) as scan, \
          patch.object(ls, "detect_local_interfaces", return_value=list(interfaces)):
         try:
@@ -66,6 +91,12 @@ def _run(argv, interfaces=()):
 
 
 def _iface(name, cidr):
+    """!
+    @brief Build a LocalInterface from a name and an address/prefix.
+    @param name  Interface name.
+    @param cidr  Interface address with prefix, e.g. `10.0.0.5/24`.
+    @return LocalInterface.
+    """
     return ls.LocalInterface(name, ipaddress.IPv4Interface(cidr))
 
 
@@ -74,13 +105,22 @@ def _iface(name, cidr):
 # ---------------------------------------------------------------------------
 
 class TestVersion:
+    """!
+    @brief A single version source for the package and both tools (#11, #15 item 10).
+    """
     def test_single_source(self):
+        """!
+        @brief lan_scan, ssh_selector, the package and _version all report the same version.
+        """
         from mu2edaq_cluster_tools import __version__ as pkg_version
         from mu2edaq_cluster_tools import ssh_selector
         from mu2edaq_cluster_tools._version import __version__ as src_version
         assert ls.__version__ == pkg_version == src_version == ssh_selector.__version__
 
     def test_lan_scan_version_flag(self, capsys):
+        """!
+        @brief `lan-scan --version` prints `lan-scan <version>` and exits 0.
+        """
         from mu2edaq_cluster_tools._version import __version__
         with pytest.raises(SystemExit) as exc:
             ls.main(["--version"])
@@ -88,21 +128,31 @@ class TestVersion:
         assert capsys.readouterr().out.strip() == f"lan-scan {__version__}"
 
     def test_no_other_version_literal(self):
+        """!
+        @brief Only _version.py assigns a `__version__` literal.
+        """
         src = REPO / "src" / "mu2edaq_cluster_tools"
         hits = [p.name for p in src.glob("*.py")
                 if any(line.startswith("__version__ =") for line in p.read_text().splitlines())]
         assert hits == ["_version.py"]
 
     def test_pyproject_points_at_version_module(self):
+        """!
+        @brief pyproject.toml reads the version dynamically from _version.
+        """
         text = (REPO / "pyproject.toml").read_text()
         assert 'attr = "mu2edaq_cluster_tools._version.__version__"' in text
 
     def test_lan_scan_import_does_not_load_textual(self):
+        """!
+        @brief Importing lan_scan in a fresh interpreter does not import Textual.
+        """
         code = (
             "import sys, mu2edaq_cluster_tools.lan_scan; "
             "sys.exit(1 if any(m == 'textual' or m.startswith('textual.') "
             "for m in sys.modules) else 0)"
         )
+        # A fresh interpreter is needed: this process has already imported Textual via other tests.
         env = dict(os.environ, PYTHONPATH=str(REPO / "src"))
         r = subprocess.run([sys.executable, "-c", code], cwd=str(REPO), env=env)
         assert r.returncode == 0
@@ -113,10 +163,19 @@ class TestVersion:
 # ---------------------------------------------------------------------------
 
 class TestProfiles:
+    """!
+    @brief Shipped lan-scan profiles in config/lan-scan/ (#15 item 6, #8).
+    """
     def test_no_lan_scan_profiles_in_config_root(self):
+        """!
+        @brief No lan_scan profile remains in config/, where ssh-selector would offer it.
+        """
         assert not list((REPO / "config").glob("lan_scan*"))
 
     def test_profiles_present_and_valid(self):
+        """!
+        @brief Four profiles exist and each loads with a valid network.
+        """
         profiles = sorted(PROFILES.glob("lan_scan*"))
         assert len(profiles) == 4
         for p in profiles:
@@ -124,6 +183,9 @@ class TestProfiles:
             ipaddress.IPv4Network(cfg["network"])
 
     def test_routable_profile_does_not_self_authorise(self):
+        """!
+        @brief The routable mu2edaq profile does not set allow_routable or TCP ports.
+        """
         cfg = ls.load_config(PROFILES / "lan_scan-mu2edaq.yaml")
         assert ipaddress.IPv4Network(cfg["network"]).is_global
         assert not cfg.get("allow_routable")
@@ -135,30 +197,51 @@ class TestProfiles:
 # ---------------------------------------------------------------------------
 
 class TestPingCommand:
+    """!
+    @brief ping_command() timeout units per platform (#12).
+    """
     def test_linux_seconds(self):
+        """!
+        @brief Linux iputils `-W` gets whole seconds.
+        """
         cmd, wait = ls.ping_command("10.0.0.1", 1.0, "Linux")
         assert cmd == ["ping", "-c", "1", "-W", "1", "10.0.0.1"]
         assert wait == 1.0
 
     def test_linux_rounds_up(self):
+        """!
+        @brief Fractional seconds on Linux round up.
+        """
         cmd, wait = ls.ping_command("10.0.0.1", 2.3, "Linux")
         assert cmd[cmd.index("-W") + 1] == "3" and wait == 3.0
 
     def test_linux_subsecond_is_one_second(self):
+        """!
+        @brief Sub-second timeouts on Linux become 1 s.
+        """
         cmd, wait = ls.ping_command("10.0.0.1", 0.2, "Linux")
         assert cmd[cmd.index("-W") + 1] == "1" and wait == 1.0
 
     def test_macos_milliseconds(self):
+        """!
+        @brief macOS `-W` gets milliseconds.
+        """
         cmd, wait = ls.ping_command("10.0.0.1", 0.25, "Darwin")
         assert cmd == ["ping", "-c", "1", "-W", "250", "10.0.0.1"]
         assert wait == 0.25
 
     def test_windows_milliseconds(self):
+        """!
+        @brief Windows uses `-n 1 -w <ms>`.
+        """
         cmd, wait = ls.ping_command("10.0.0.1", 1.5, "Windows")
         assert cmd == ["ping", "-n", "1", "-w", "1500", "10.0.0.1"]
         assert wait == 1.5
 
     def test_subprocess_kill_tracks_requested_wait(self):
+        """!
+        @brief The subprocess timeout is the effective wait plus PING_GRACE.
+        """
         with patch("platform.system", return_value="Linux"), \
              patch("subprocess.run") as mock:
             mock.return_value = MagicMock(returncode=1)
@@ -171,10 +254,22 @@ class TestPingCommand:
 # ---------------------------------------------------------------------------
 
 class TestReverseDnsTimeout:
+    """!
+    @brief reverse_dns() timeout is per lookup (#12).
+    """
     def test_slow_lookup_is_bounded(self):
+        """!
+        @brief A hung lookup returns None within the timeout.
+        """
+        # The fake resolver blocks on this event; it is set in `finally` so the worker thread exits.
         release = threading.Event()
 
         def slow(ip):
+            """!
+            @brief Simulate a resolver that blocks until released.
+            @param ip  Address being resolved.
+            @return gethostbyaddr-style tuple, returned too late to matter.
+            """
             release.wait(5)
             return ("late.example.com", [], [ip])
 
@@ -187,6 +282,9 @@ class TestReverseDnsTimeout:
             release.set()
 
     def test_does_not_touch_global_socket_timeout(self):
+        """!
+        @brief socket.setdefaulttimeout() is never called.
+        """
         with patch("socket.setdefaulttimeout") as sdt, \
              patch("socket.gethostbyaddr", return_value=("h.example.com", [], [])):
             assert ls.reverse_dns("10.0.0.1", 0.5) == "h.example.com"
@@ -198,14 +296,24 @@ class TestReverseDnsTimeout:
 # ---------------------------------------------------------------------------
 
 class TestRateLimiter:
+    """!
+    @brief RateLimiter spacing with an injected clock and sleep (#8).
+    """
     def test_spacing(self):
+        """!
+        @brief At 10/s consecutive acquires are spaced 0.1 s apart.
+        """
         sleeps = []
+        # Frozen clock and recorded sleeps make the spacing deterministic without real waits.
         rl = ls.RateLimiter(10.0, clock=lambda: 100.0, sleep=sleeps.append)
         for _ in range(4):
             rl.acquire()
         assert sleeps == pytest.approx([0.1, 0.2, 0.3])
 
     def test_no_backlog_after_idle(self):
+        """!
+        @brief An idle period does not build up burst credit or sleeps.
+        """
         now = [100.0]
         sleeps = []
         rl = ls.RateLimiter(10.0, clock=lambda: now[0], sleep=sleeps.append)
@@ -215,6 +323,9 @@ class TestRateLimiter:
         assert sleeps == []
 
     def test_disabled(self):
+        """!
+        @brief Rate 0 disables limiting.
+        """
         sleeps = []
         rl = ls.RateLimiter(0, sleep=sleeps.append)
         for _ in range(5):
@@ -223,11 +334,18 @@ class TestRateLimiter:
 
 
 class TestScanBounds:
+    """!
+    @brief scan_network() concurrency, coverage and address iteration (#8).
+    """
     def test_concurrency_never_exceeds_workers(self):
+        """!
+        @brief In-flight pings never exceed the worker count.
+        """
         active = [0]
         peak = [0]
         lock = threading.Lock()
 
+        # Track peak concurrent pings; the sleep makes workers overlap.
         def fake_ping(ip, timeout):
             with lock:
                 active[0] += 1
@@ -244,6 +362,9 @@ class TestScanBounds:
         assert 1 <= peak[0] <= 3
 
     def test_every_host_probed_once(self):
+        """!
+        @brief Each usable address is pinged exactly once and responders are returned.
+        """
         seen = []
         lock = threading.Lock()
 
@@ -259,6 +380,10 @@ class TestScanBounds:
         assert [r.ip for r in res] == ["10.0.0.7"]
 
     def test_rate_limiter_applied(self):
+        """!
+        @brief The rate limiter is acquired once per host.
+        """
+        # Patch acquire so the test counts calls instead of sleeping; /29 has 6 usable hosts.
         net = ipaddress.IPv4Network("10.0.0.0/29")
         with patch.object(ls, "ping", return_value=False), \
              patch.object(ls.RateLimiter, "acquire") as acq:
@@ -266,11 +391,17 @@ class TestScanBounds:
         assert acq.call_count == 6
 
     def test_slash32_and_slash31(self):
+        """!
+        @brief /32 yields the single address and /31 both addresses.
+        """
         assert list(ls.iter_addresses(ipaddress.IPv4Network("10.0.0.5/32"))) == \
             [ipaddress.IPv4Address("10.0.0.5")]
         assert len(list(ls.iter_addresses(ipaddress.IPv4Network("10.0.0.4/31")))) == 2
 
     def test_host_count(self):
+        """!
+        @brief host_count() matches usable addresses (/22 is 1022, /21 is 2046, /32 is 1).
+        """
         assert ls.host_count(ipaddress.IPv4Network("10.0.0.0/22")) == 1022
         assert ls.host_count(ipaddress.IPv4Network("10.0.0.0/21")) == 2046
         assert ls.host_count(ipaddress.IPv4Network("10.0.0.0/32")) == 1
@@ -281,7 +412,13 @@ class TestScanBounds:
 # ---------------------------------------------------------------------------
 
 class TestAutoDetect:
+    """!
+    @brief Deterministic interface auto-detection and refusal of ambiguous choices (#8).
+    """
     def test_interface_names_linux(self):
+        """!
+        @brief `ip addr` output yields named interfaces with their networks.
+        """
         with patch("subprocess.check_output", return_value=IP_ADDR_OUTPUT):
             found = ls.detect_local_interfaces()
         pairs = [(i.name, str(i.network)) for i in found]
@@ -289,6 +426,10 @@ class TestAutoDetect:
         assert ("docker0", "172.17.0.0/16") in pairs
 
     def test_interface_names_macos(self):
+        """!
+        @brief ifconfig output yields named interfaces.
+        """
+        # Simulate macOS: no `ip`, ifconfig present.
         def side_effect(cmd, **kwargs):
             if cmd[0] == "ip":
                 raise FileNotFoundError
@@ -298,6 +439,10 @@ class TestAutoDetect:
         assert ("en0", "192.168.1.0/24") in [(i.name, str(i.network)) for i in found]
 
     def test_interface_names_windows(self):
+        """!
+        @brief ipconfig output yields the adapter name and network.
+        """
+        # Simulate Windows: only ipconfig present.
         def side_effect(cmd, **kwargs):
             if cmd[0] in ("ip", "ifconfig"):
                 raise FileNotFoundError
@@ -307,6 +452,10 @@ class TestAutoDetect:
         assert [(i.name, str(i.network)) for i in found] == [("Ethernet 2", "10.226.9.0/24")]
 
     def test_scannable_is_sorted_filtered_and_order_independent(self):
+        """!
+        @brief Loopback and link-local are dropped, duplicates merged, and order is input-independent.
+        """
+        # Loopback and link-local (169.254/16) must be dropped; the two eth /24s are the same network.
         ifs = [_iface("docker0", "172.17.0.1/16"), _iface("lo", "127.0.0.1/8"),
                _iface("eth1", "10.226.9.6/24"), _iface("eth9", "169.254.1.1/16"),
                _iface("eth0", "10.226.9.5/24")]
@@ -316,6 +465,9 @@ class TestAutoDetect:
         assert ls.scannable_interfaces(list(reversed(ifs))) == out
 
     def test_multiple_networks_refused(self, clean_env, capsys):
+        """!
+        @brief Two candidate networks exit EXIT_NO_NETWORK and list both with interface names.
+        """
         ifs = [_iface("eth0", "10.226.9.5/24"), _iface("eth1", "192.168.246.5/24")]
         code, scan = _run([], interfaces=ifs)
         assert code == ls.EXIT_NO_NETWORK
@@ -324,6 +476,9 @@ class TestAutoDetect:
         assert "10.226.9.0/24" in err and "192.168.246.0/24" in err and "eth1" in err
 
     def test_single_network_is_named(self, clean_env, capsys):
+        """!
+        @brief A single candidate is scanned and its interface is named on stderr.
+        """
         ifs = [_iface("lo", "127.0.0.1/8"), _iface("eth0", "10.226.9.5/24")]
         code, scan = _run(["--no-dns"], interfaces=ifs)
         assert code == 0
@@ -331,10 +486,16 @@ class TestAutoDetect:
         assert "eth0" in capsys.readouterr().err
 
     def test_nothing_detected(self, clean_env):
+        """!
+        @brief Only loopback present exits EXIT_NO_NETWORK.
+        """
         code, scan = _run([], interfaces=[_iface("lo", "127.0.0.1/8")])
         assert code == ls.EXIT_NO_NETWORK and not scan.called
 
     def test_autodetected_large_network_still_bounded(self, clean_env):
+        """!
+        @brief An auto-detected /16 is still refused by the size guard.
+        """
         code, scan = _run([], interfaces=[_iface("docker0", "172.17.0.1/16")])
         assert code == ls.EXIT_REFUSED and not scan.called
 
@@ -344,47 +505,81 @@ class TestAutoDetect:
 # ---------------------------------------------------------------------------
 
 class TestGuards:
+    """!
+    @brief Size and routable-network guards and their overrides (#8).
+    """
     def test_slash22_allowed(self, clean_env):
+        """!
+        @brief A /22 (1022 hosts) is within the default limit.
+        """
         code, scan = _run(["-n", "10.0.0.0/22"])
         assert code == 0 and scan.called
 
     def test_slash21_refused(self, clean_env, capsys):
+        """!
+        @brief A /21 is refused and the message names --allow-large.
+        """
         code, scan = _run(["-n", "10.0.0.0/21"])
         assert code == ls.EXIT_REFUSED and not scan.called
         assert "--allow-large" in capsys.readouterr().err
 
     def test_slash16_typo_refused(self, clean_env):
+        """!
+        @brief A /16 typo is refused before any probe.
+        """
         code, scan = _run(["-n", "10.226.0.0/16"])
         assert code == ls.EXIT_REFUSED and not scan.called
 
     def test_allow_large(self, clean_env):
+        """!
+        @brief --allow-large permits a /21.
+        """
         code, scan = _run(["-n", "10.0.0.0/21", "--allow-large"])
         assert code == 0 and scan.called
 
     def test_max_hosts_lowered(self, clean_env):
+        """!
+        @brief --max-hosts below the network size refuses the scan.
+        """
         code, _ = _run(["-n", "10.0.0.0/24", "--max-hosts", "100"])
         assert code == ls.EXIT_REFUSED
 
     def test_max_hosts_env(self, clean_env):
+        """!
+        @brief LAN_SCAN_MAX_HOSTS raises the limit.
+        """
         clean_env.setenv("LAN_SCAN_MAX_HOSTS", "4096")
         code, scan = _run(["-n", "10.0.0.0/21"])
         assert code == 0 and scan.called
 
     def test_allow_large_env(self, clean_env):
+        """!
+        @brief LAN_SCAN_ALLOW_LARGE permits a large network.
+        """
         clean_env.setenv("LAN_SCAN_ALLOW_LARGE", "1")
         code, _ = _run(["-n", "10.0.0.0/21"])
         assert code == 0
 
     def test_routable_refused(self, clean_env, capsys):
+        """!
+        @brief A globally routable network is refused and the message names --allow-routable.
+        """
+        # 131.225.0.0/16 is Fermilab public address space, i.e. globally routable.
         code, scan = _run(["-n", "131.225.245.0/24"])
         assert code == ls.EXIT_REFUSED and not scan.called
         assert "--allow-routable" in capsys.readouterr().err
 
     def test_routable_allowed(self, clean_env):
+        """!
+        @brief --allow-routable permits a routable network.
+        """
         code, scan = _run(["-n", "131.225.245.0/24", "--allow-routable"])
         assert code == 0 and scan.called
 
     def test_shipped_routable_profile(self, clean_env):
+        """!
+        @brief The routable mu2edaq profile needs --allow-routable and then scans with 16 workers, no ports, rate 20.
+        """
         prof = str(PROFILES / "lan_scan-mu2edaq.yaml")
         code, scan = _run(["-c", prof])
         assert code == ls.EXIT_REFUSED and not scan.called
@@ -395,6 +590,10 @@ class TestGuards:
 
     @pytest.mark.parametrize("name", ["lan_scan-mu2edaq-data.yaml", "lan_scan-mu2edaq-ipmi.yaml"])
     def test_private_profiles_accepted(self, clean_env, name):
+        """!
+        @brief The private-network profiles scan without overrides.
+        @param name  Parametrized profile file name.
+        """
         code, scan = _run(["-c", str(PROFILES / name)])
         assert code == 0 and scan.called
 
@@ -404,12 +603,24 @@ class TestGuards:
 # ---------------------------------------------------------------------------
 
 class TestPrecedence:
+    """!
+    @brief Option precedence commandline > environment > config file > default, and validation.
+    """
     def _cfg(self, tmp_path, text):
+        """!
+        @brief Write a lan-scan config file.
+        @param tmp_path  Directory to write into.
+        @param text      YAML text.
+        @return Path as str, ready for `-c`.
+        """
         p = tmp_path / "scan.yaml"
         p.write_text(text)
         return str(p)
 
     def test_cli_over_env_over_config(self, clean_env, tmp_path):
+        """!
+        @brief Each source wins over the ones below it, setting by setting.
+        """
         cfg = self._cfg(tmp_path, "network: 10.1.0.0/24\nworkers: 8\nrate: 5\ntimeout: 2\n")
         clean_env.setenv("LAN_SCAN_WORKERS", "12")
         clean_env.setenv("LAN_SCAN_RATE", "7")
@@ -422,6 +633,9 @@ class TestPrecedence:
         assert kwargs["rate"] == 9   # commandline over env
 
     def test_defaults(self, clean_env):
+        """!
+        @brief Without config or environment the module defaults are used.
+        """
         code, scan = _run(["-n", "10.0.0.0/24"])
         assert code == 0
         args, kwargs = scan.call_args
@@ -429,17 +643,26 @@ class TestPrecedence:
         assert args[3] == [] and args[4] is True and kwargs["rate"] == ls.DEFAULT_RATE
 
     def test_no_dns_env(self, clean_env):
+        """!
+        @brief LAN_SCAN_NO_DNS=true disables reverse DNS.
+        """
         clean_env.setenv("LAN_SCAN_NO_DNS", "true")
         _, scan = _run(["-n", "10.0.0.0/24"])
         assert scan.call_args[0][4] is False
 
     def test_config_no_dns_overridden_by_env(self, clean_env, tmp_path):
+        """!
+        @brief LAN_SCAN_NO_DNS=0 overrides `no_dns: true` in the config file.
+        """
         cfg = self._cfg(tmp_path, "no_dns: true\n")
         clean_env.setenv("LAN_SCAN_NO_DNS", "0")
         _, scan = _run(["-c", cfg, "-n", "10.0.0.0/24"])
         assert scan.call_args[0][4] is True
 
     def test_empty_env_falls_through(self, clean_env, tmp_path):
+        """!
+        @brief An empty environment value falls through to the config file.
+        """
         cfg = self._cfg(tmp_path, "workers: 8\n")
         clean_env.setenv("LAN_SCAN_WORKERS", "")
         _, scan = _run(["-c", cfg, "-n", "10.0.0.0/24"])
@@ -456,6 +679,11 @@ class TestPrecedence:
         (["-n", "10.0.0.0/24"], {"LAN_SCAN_ALLOW_LARGE": "maybe"}),
     ])
     def test_bad_values_exit_2(self, clean_env, capsys, argv, env):
+        """!
+        @brief Invalid commandline or environment values exit EXIT_USAGE before scanning.
+        @param argv  Parametrized commandline.
+        @param env   Parametrized LAN_SCAN_* variables.
+        """
         for k, v in env.items():
             clean_env.setenv(k, v)
         code, scan = _run(argv)
@@ -463,5 +691,8 @@ class TestPrecedence:
         assert "error:" in capsys.readouterr().err
 
     def test_missing_config_exit_2(self, clean_env, tmp_path):
+        """!
+        @brief A missing `-c` file exits EXIT_USAGE.
+        """
         code, _ = _run(["-c", str(tmp_path / "nope.yaml"), "-n", "10.0.0.0/24"])
         assert code == ls.EXIT_USAGE

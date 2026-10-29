@@ -1,4 +1,14 @@
-"""Tests for new-terminal command construction and foreground ssh handling."""
+"""!
+@file test_terminal_launch.py
+@brief Tests for ssh-selector new-terminal launch and foreground ssh stderr handling (GitHub issue #15, items 7 and 8).
+
+Covers _terminal_command() (argv-safe flags per emulator, preference order,
+shutil.which instead of running `which`), _open_in_new_terminal() on Linux,
+Windows and macOS, and _run_foreground_ssh(), which forwards ssh's stderr
+live and keeps only a bounded tail for the error dialog. Terminal emulators
+are never launched: shutil.which and subprocess.Popen are mocked. The
+foreground tests run the Python interpreter in place of ssh.
+"""
 
 import sys
 from unittest import mock
@@ -11,7 +21,11 @@ SSH_CMD = ["ssh", "-J", "jump@gw", "-l", "mu2edaq", "mu2e-daq-01"]
 
 
 def _which_only(*present):
-    """Return a fake shutil.which that finds only the named executables."""
+    """!
+    @brief Return a fake shutil.which that finds only the named executables.
+    @param present  Executable names to report as installed.
+    @return Callable name -> path or None.
+    """
     return lambda name: f"/usr/bin/{name}" if name in present else None
 
 
@@ -26,28 +40,45 @@ def _which_only(*present):
     ("xterm", "-e"),
 ])
 def test_terminal_command_passes_argv_after_flag(exe, flag):
+    """!
+    @brief Each emulator receives the ssh argv as separate arguments after its exec flag.
+    @param exe   Parametrized emulator name.
+    @param flag  Flag that takes the rest of argv for that emulator.
+    """
     with mock.patch.object(sel.shutil, "which", side_effect=_which_only(exe)):
         assert sel._terminal_command(SSH_CMD) == [exe, flag] + SSH_CMD
 
 
 def test_xfce4_uses_x_not_e():
+    """!
+    @brief xfce4-terminal uses `-x`; its `-e` takes a single string (#15 item 7).
+    """
     with mock.patch.object(sel.shutil, "which", side_effect=_which_only("xfce4-terminal")):
         argv = sel._terminal_command(SSH_CMD)
     assert argv[:2] == ["xfce4-terminal", "-x"]
 
 
 def test_terminal_command_preference_order():
+    """!
+    @brief xfce4-terminal is preferred over konsole and xterm when several are installed.
+    """
     with mock.patch.object(sel.shutil, "which",
                            side_effect=_which_only("xterm", "konsole", "xfce4-terminal")):
         assert sel._terminal_command(SSH_CMD)[0] == "xfce4-terminal"
 
 
 def test_terminal_command_none_found():
+    """!
+    @brief With no known emulator installed the result is None.
+    """
     with mock.patch.object(sel.shutil, "which", return_value=None):
         assert sel._terminal_command(SSH_CMD) is None
 
 
 def test_terminal_lookup_does_not_run_which_program():
+    """!
+    @brief Lookup uses shutil.which and never spawns a `which` process (absent on Windows).
+    """
     with mock.patch.object(sel.shutil, "which", return_value=None), \
          mock.patch.object(sel.subprocess, "run") as run, \
          mock.patch.object(sel.subprocess, "Popen") as popen:
@@ -61,6 +92,9 @@ def test_terminal_lookup_does_not_run_which_program():
 # ---------------------------------------------------------------------------
 
 def test_open_linux_launches_first_terminal(monkeypatch):
+    """!
+    @brief On Linux the detected emulator is launched with the ssh argv.
+    """
     monkeypatch.setattr(sel.sys, "platform", "linux")
     with mock.patch.object(sel.shutil, "which", side_effect=_which_only("xfce4-terminal")), \
          mock.patch.object(sel.subprocess, "Popen") as popen:
@@ -69,6 +103,9 @@ def test_open_linux_launches_first_terminal(monkeypatch):
 
 
 def test_open_linux_no_terminal_prints_command(monkeypatch, capsys):
+    """!
+    @brief On Linux without an emulator nothing is launched and a message is printed.
+    """
     monkeypatch.setattr(sel.sys, "platform", "linux")
     with mock.patch.object(sel.shutil, "which", return_value=None), \
          mock.patch.object(sel.subprocess, "Popen") as popen:
@@ -78,7 +115,11 @@ def test_open_linux_no_terminal_prints_command(monkeypatch, capsys):
 
 
 def test_open_windows_new_console(monkeypatch):
+    """!
+    @brief On Windows ssh is started directly with CREATE_NEW_CONSOLE and no emulator lookup.
+    """
     monkeypatch.setattr(sel.sys, "platform", "win32")
+    # CREATE_NEW_CONSOLE exists only on Windows builds of subprocess; inject it on other platforms.
     monkeypatch.setattr(sel.subprocess, "CREATE_NEW_CONSOLE", 0x10, raising=False)
     with mock.patch.object(sel.shutil, "which") as which, \
          mock.patch.object(sel.subprocess, "Popen") as popen:
@@ -88,7 +129,11 @@ def test_open_windows_new_console(monkeypatch):
 
 
 def test_open_macos_uses_osascript(monkeypatch):
+    """!
+    @brief On macOS Terminal.app is driven via osascript with double quotes escaped.
+    """
     monkeypatch.setattr(sel.sys, "platform", "darwin")
+    # A double quote in the argv checks escaping inside the AppleScript string literal.
     cmd = ["ssh", "-l", "u", 'h"x']
     with mock.patch.object(sel.subprocess, "Popen") as popen:
         sel._open_in_new_terminal(cmd)
@@ -103,10 +148,19 @@ def test_open_macos_uses_osascript(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _py(code):
+    """!
+    @brief Build an argv that runs a Python snippet, used in place of ssh.
+    @param code  Python source passed to `-c`.
+    @return argv list.
+    """
     return [sys.executable, "-c", code]
 
 
 def test_foreground_ssh_error_status_returns_stderr(capfd):
+    """!
+    @brief Exit status 255 (ssh's own failure) returns the stderr text and still echoes it live.
+    @param capfd  Captures the file-descriptor-level stderr the child writes to.
+    """
     status, err = sel._run_foreground_ssh(_py(
         "import sys; sys.stderr.write('Permission denied (gssapi-with-mic).\\n'); sys.exit(255)"))
     assert status == 255
@@ -116,6 +170,9 @@ def test_foreground_ssh_error_status_returns_stderr(capfd):
 
 
 def test_foreground_ssh_remote_status_no_dialog(capfd):
+    """!
+    @brief A non-255 status (remote command) returns no error text, so no dialog is shown.
+    """
     status, err = sel._run_foreground_ssh(_py(
         "import sys; sys.stderr.write('warning: something\\n'); sys.exit(1)"))
     assert status == 1
@@ -124,10 +181,17 @@ def test_foreground_ssh_remote_status_no_dialog(capfd):
 
 
 def test_foreground_ssh_success():
+    """!
+    @brief A clean exit returns (0, '').
+    """
     assert sel._run_foreground_ssh(_py("pass")) == (0, "")
 
 
 def test_foreground_ssh_keeps_only_tail():
+    """!
+    @brief Only the last _STDERR_TAIL_BYTES of stderr are kept.
+    """
+    # Write three times the tail size so truncation must occur.
     n = sel._STDERR_TAIL_BYTES * 3
     status, err = sel._run_foreground_ssh(_py(
         f"import sys; sys.stderr.write('a' * {n} + 'END'); sys.exit(255)"))
