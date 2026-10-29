@@ -3289,12 +3289,8 @@ class ConfigItem(ListItem):
         """!
         @brief Build the item's label showing the file path.
         @return the child widgets (a single Label).
-        @warning The body refers to the bare name `path` rather than
-                 `self.path`; no module-level `path` exists, so composing an
-                 item would raise NameError. Recorded here as a finding;
-                 this documentation change does not alter code.
         """
-        yield Label(str(path))
+        yield Label(str(self.path))
 
 
 class ConfigSelectApp(App[Optional[Path]]):
