@@ -1,4 +1,4 @@
-.TH BOOTSTRAP.SH 1 "2026-10-06" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.TH BOOTSTRAP.SH 1 "2026-10-29" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
 .SH NAME
 bootstrap.sh \- create the mu2edaq-cluster-tools development venv
 .SH SYNOPSIS
@@ -8,27 +8,31 @@ bootstrap.sh \- create the mu2edaq-cluster-tools development venv
 .B ./bootstrap.sh
 .BR \-\-version | \-h
 .SH DESCRIPTION
-Creates
+Changes to the directory holding the script (the checkout), so it may be run
+from anywhere; creates
 .I venv/
-in the checkout with
+there with
 .B $PYTHON
 (default
 .BR python3 ,
 3.9 or newer) if it does not exist, activates it, upgrades pip, and installs
-the package with its
-.I dev
-extra (pytest) so that
+the package from the checkout so that
 .B ssh\-selector
 and
 .B lan\-scan
 are on the venv's
 .BR PATH .
 .PP
-The package spec is
-.B .[dev]
-relative to the
-.I current
-directory, not the script's, so run the script from the checkout.
+Without
+.B \-\-dev
+this is a regular (copied) install with the runtime dependencies only:
+.BR "pip install ." .
+With
+.B \-\-dev
+it is an editable install with the
+.I dev
+extra (pytest):
+.BR "pip install \-e .[dev]" .
 For a per-user install with launchers on
 .BR PATH ,
 use
@@ -36,12 +40,14 @@ use
 .SH OPTIONS
 .TP
 .B \-\-dev
-Install in editable mode
-.RB ( "pip install \-e" ).
-Without it the install is a regular copy.
-The
+Install in editable mode with the
 .I dev
-extra is installed either way.
+extra
+.RB ( "pip install \-e .[dev]" ),
+for development and running the tests.
+Without it the install is a regular copy without the
+.I dev
+extra.
 .TP
 .B \-\-version
 Print
@@ -52,10 +58,10 @@ Print
 and exit.
 .TP
 .BR \-h ", " \-\-help
-Print the script's header comment and exit.
+Print the script's usage and exit.
 .SH FILES
 .TP
-.I venv/
+.I <checkout>/venv/
 The virtual environment, POSIX layout
 .RI ( venv/bin/activate ).
 .SH ENVIRONMENT
@@ -76,8 +82,8 @@ Unknown option.
 .SH EXAMPLES
 .RS
 .nf
-cd mu2edaq\-cluster\-tools
-\&./bootstrap.sh \-\-dev
+~/src/mu2edaq\-cluster\-tools/bootstrap.sh \-\-dev
+cd ~/src/mu2edaq\-cluster\-tools
 source venv/bin/activate
 pytest
 .fi

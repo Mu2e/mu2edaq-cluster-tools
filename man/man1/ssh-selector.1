@@ -58,7 +58,9 @@ Any other status is the remote shell's and raises no dialog.
 .TP
 .BR \-c ", " \-\-config " \fIFILE\fR"
 YAML host file.
-Skips discovery.
+Overrides
+.B SSH_SELECTOR_CONFIG
+and skips discovery.
 .TP
 .BI \-\-check\-concurrency " N"
 Maximum number of
@@ -80,26 +82,58 @@ and exit.
 .BR \-h ", " \-\-help
 Show help and exit.
 .SH CONFIG FILE DISCOVERY
-Without
-.BR \-c ,
-every
+The host file is chosen by the first of these that applies:
+.IP 1. 4
+.B \-c
+.IR FILE .
+.IP 2. 4
+.BR SSH_SELECTOR_CONFIG ,
+a file path; a leading
+.I ~
+is expanded.
+.IP 3. 4
+Discovery.
+Directories are searched in tiers; the first tier holding any
 .I *.yaml
-file in
+file supplies all candidates and later tiers are not consulted:
+.RS
+.IP a. 3
 .I ./
-and then
+and
 .I ./config/
-is a candidate (relative to the current directory; duplicates by real path are
-dropped).
+(relative to the current directory, merged in that order);
+.IP b. 3
+.IR $XDG_CONFIG_HOME/mu2edaq/cluster\-tools/ ,
+by default
+.IR ~/.config/mu2edaq/cluster\-tools/ ;
+.IP c. 3
+.IR <install\ dir>/config/ ,
+where the install directory is
+.B MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR
+if set, else the parent of the running venv when it carries the
+.BR install.sh (1)
+marker file
+.IR .mu2edaq\-cluster\-tools\-install .
+.RE
+.PP
+Duplicates by real path are dropped.
 One candidate is loaded directly; several are offered in a picker; none is an
-error.
-No other directory and no environment variable is searched.
-In this repository's
-.I config/
-the picker also lists the
+error that lists the directories searched.
+A file named by
+.B \-c
+or
+.B SSH_SELECTOR_CONFIG
+that does not exist is an error; there is no fallback to discovery.
+.PP
+.I *.yml
+and
+.I *.yaml.example
+files are not candidates.
+Any other
+.I *.yaml
+file in a searched directory is, so keep non-host YAML (for example
 .B lan\-scan
-profiles, which have no
-.B hosts
-key and stop with "No hosts defined".
+profiles) out of them; such a file stops with "No hosts defined".
 .SH CONFIGURATION
 Top-level keys:
 .TP
@@ -289,7 +323,18 @@ sends SIGTERM to the highlighted background tunnel.
 .SH FILES
 .TP
 .I ./*.yaml\fR, \fI./config/*.yaml
-Discovered host files.
+Discovered host files, first tier.
+.TP
+.I ~/.config/mu2edaq/cluster\-tools/*.yaml
+Per-user host files, second tier
+(under
+.B $XDG_CONFIG_HOME
+when set).
+.TP
+.I ~/.local/share/mu2edaq\-cluster\-tools/config/*.yaml
+Topology files copied by
+.BR install.sh (1)
+(default install directory), third tier.
 .TP
 .I config/mu2e_daq.yaml
 Mu2e DAQ topology (75 hosts in 13 groups).
@@ -300,6 +345,21 @@ NOvA DAQ, Mu2e offline and Fermilab GPVM host lists.
 .I config/hosts.yaml.example\fR, \fIconfig/example.yaml
 Annotated examples.
 .SH ENVIRONMENT
+.TP
+.B SSH_SELECTOR_CONFIG
+Host file to load when
+.B \-c
+is not given.
+.TP
+.B XDG_CONFIG_HOME
+Base of the per-user config directory (default
+.IR ~/.config ).
+.TP
+.B MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR
+Install directory whose
+.I config/
+is the last discovery tier; also read by
+.BR install.sh (1).
 .TP
 .B USER
 Login name used for the
@@ -332,6 +392,8 @@ Quit from the host list or the config picker.
 .B 1
 No config file found, the
 .B \-c
+or
+.B SSH_SELECTOR_CONFIG
 file does not exist, the file fails to load, it defines no hosts, or the
 check concurrency from the command line, environment or file is not a positive
 integer.
@@ -345,6 +407,8 @@ ssh\-selector \-c config/mu2e_daq.yaml
 ssh\-selector \-c config/nova_daq.yaml \-\-check\-concurrency 4
 SSH_SELECTOR_CHECK_CONCURRENCY=2 ssh\-selector
 cd ~/clusters && ssh\-selector        # pick among ./*.yaml
+SSH_SELECTOR_CONFIG=~/hosts.yaml ssh\-selector
+mkdir \-p ~/.config/mu2edaq/cluster\-tools && cp hosts.yaml ~/.config/mu2edaq/cluster\-tools/
 .fi
 .RE
 .SH BUGS

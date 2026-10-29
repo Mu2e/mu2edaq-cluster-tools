@@ -58,10 +58,21 @@ Then run it from a directory containing your `*.yaml` host config (or point at
 one explicitly):
 
 ```bash
-ssh-selector                 # auto-discovers ./*.yaml and ./config/*.yaml
+ssh-selector                 # auto-discovers host files (see below)
 ssh-selector -c hosts.yaml   # use a specific config file
+SSH_SELECTOR_CONFIG=~/hosts.yaml ssh-selector   # same, from the environment
 ssh-selector --version
 ```
+
+Host file selection, first match wins: `-c FILE`, then `$SSH_SELECTOR_CONFIG`,
+then discovery. Discovery searches these tiers in order and uses the first that
+holds any `*.yaml` file (one file loads directly; several open a picker):
+
+1. `./*.yaml` and `./config/*.yaml`
+2. `~/.config/mu2edaq/cluster-tools/*.yaml` (`$XDG_CONFIG_HOME` is honoured)
+3. `<install dir>/config/*.yaml` for an `install.sh` install
+   (`$MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR`, default
+   `~/.local/share/mu2edaq-cluster-tools`)
 
 ### With the install script
 
@@ -75,16 +86,55 @@ cd mu2edaq-cluster-tools
 ```
 
 This will:
-- Copy the application to `~/.local/share/mu2edaq-cluster-tools/`
-- Create a self-contained virtual environment there with all dependencies
-- Install a `ssh-selector` launcher in `~/.local/bin/` (or `~/bin/` if that exists)
+- Create a self-contained virtual environment in
+  `~/.local/share/mu2edaq-cluster-tools/venv` and install the package into it
+- Copy the topology files (`mu2e_daq.yaml`, `mu2e_offline.yaml`,
+  `nova_daq.yaml`, `fnal_gpvm.yaml`) and `hosts.yaml.example` into
+  `~/.local/share/mu2edaq-cluster-tools/config/`, where the installed
+  `ssh-selector` finds them from any directory
+- Install `ssh-selector` and `lan-scan` launchers in `~/.local/bin/` (or
+  `~/bin/` if that exists and `~/.local/bin` does not)
+- Record everything it created in a manifest,
+  `~/.local/share/mu2edaq-cluster-tools/.mu2edaq-cluster-tools-install`
 
-If `~/.local/bin` is not yet on your `PATH`, the script will tell you what to add to your shell config.
+If the bin directory is not yet on your `PATH`, the script will tell you what to
+add to your shell config.
 
-To uninstall:
+Options (command line > environment > default):
+
+| Option | Environment | Default |
+|---|---|---|
+| `--prefix DIR` / `--install-dir DIR` | `MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR` | `~/.local/share/mu2edaq-cluster-tools` |
+| `--bin-dir DIR` | `MU2EDAQ_CLUSTER_TOOLS_BIN_DIR` | `~/.local/bin` or `~/bin` |
+| `--app-cmd NAME` | `MU2EDAQ_CLUSTER_TOOLS_APP_CMD` | `ssh-selector` |
+
+The generic `INSTALL_DIR` and `APP_CMD` variables used by earlier versions are
+ignored (with a warning). Unknown options are an error.
+
+```bash
+./install.sh --prefix /opt/mu2e/cluster-tools --bin-dir /opt/mu2e/bin
+```
+
+To uninstall (add the same `--prefix` if you used one):
 
 ```bash
 ./install.sh --uninstall
+```
+
+Uninstall removes only the entries listed in the manifest (the venv, the copied
+config files and the launchers it generated), then the directory if it is
+empty. It refuses a directory without the manifest, and never accepts `/`,
+`$HOME` or an empty path. Put personal host files in
+`~/.config/mu2edaq/cluster-tools/` rather than the install directory.
+
+### Development checkout
+
+`./bootstrap.sh` creates `venv/` in the checkout (it can be run from any
+directory) and installs the package into it: a regular install by default,
+or an editable install with the `dev` extra (pytest) with `--dev`.
+
+```bash
+./bootstrap.sh --dev && source venv/bin/activate && pytest
 ```
 
 ### Manual installation
