@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# bootstrap.sh -- set up a local Python virtual environment for
-# mu2edaq-cluster-tools (ssh-selector) and install/update its dependencies
-# from pyproject.toml, for running the tool in-place during development.
+# bootstrap.sh -- set up a local Python virtual environment (venv/ in this
+# checkout) for mu2edaq-cluster-tools (ssh-selector, lan-scan) and
+# install/update the package and its dependencies from pyproject.toml.
+# The script works from its own directory, so it may be run from anywhere.
 #
-# For a system-wide install (a `ssh-selector` launcher on PATH), use
-# ./install.sh instead.
+#   (default)  regular install of the package, runtime dependencies only
+#   --dev      editable install (pip install -e) plus the dev extra (pytest)
+#
+# For a per-user install (launchers on PATH), use ./install.sh instead.
 #
 # Usage: ./bootstrap.sh [--dev] [--version] [-h|--help]
 set -euo pipefail
@@ -25,7 +28,7 @@ for arg in "$@"; do
             echo "mu2edaq-cluster-tools $(version)"
             exit 0 ;;
         -h|--help)
-            grep '^#' "$0" | sed 's/^# \{0,1\}//'
+            sed -n '2,/^[^#]/{/^#/s/^# \{0,1\}//p;}' "$HERE/bootstrap.sh"
             exit 0 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
@@ -48,20 +51,22 @@ if [ ! -d "$VENV" ]; then
     "$PYTHON" -m venv "$VENV"
 fi
 
+# Install the package from this checkout, wherever the script was run from.
+cd "$HERE"
+
 # shellcheck disable=SC1091
 source "$VENV/bin/activate"
-pip install --upgrade pip >/dev/null
+python -m pip install --upgrade pip >/dev/null
 
-SPEC=".[dev]"
 if [ "$DEV" = 1 ]; then
-    echo "Installing (editable): $SPEC"
-    pip install -e "$SPEC"
+    echo "Installing (editable, with dev extra): .[dev]"
+    python -m pip install -e ".[dev]"
 else
-    echo "Installing: $SPEC"
-    pip install "$SPEC"
+    echo "Installing: ."
+    python -m pip install .
 fi
 
 echo ""
-echo "Bootstrap complete. Activate with:  source venv/bin/activate"
+echo "Bootstrap complete. Activate with:  source $VENV/bin/activate"
 echo "Run the tool with:                  ssh-selector"
 echo "For a system-wide launcher instead, use ./install.sh"

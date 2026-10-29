@@ -53,12 +53,18 @@ Precedence command line > environment > file > default (`:275-294`).
 
 | Script | Options | Man page |
 |---|---|---|
-| `bootstrap.sh` | `--dev` (editable), `--version`, `-h` | `man/man1/bootstrap.sh.1` |
-| `install.sh` | first argument only: `--uninstall`, `--version`; anything else installs | `man/man1/install.sh.1` |
+| `bootstrap.sh` | `--dev` (editable + `dev` extra; default regular install), `--version`, `-h` | `man/man1/bootstrap.sh.1` |
+| `install.sh` | `--prefix`/`--install-dir DIR`, `--bin-dir DIR`, `--app-cmd NAME`, `--uninstall`, `--version`, `-h`; unknown options exit 2 | `man/man1/install.sh.1` |
 
-`install.sh` reads `INSTALL_DIR` (default `~/.local/share/mu2edaq-cluster-tools`)
-and `APP_CMD` (default `ssh-selector`) from the environment
-(`install.sh:15-16`); `bootstrap.sh` reads `PYTHON`.
+`install.sh` reads `MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR` (default
+`~/.local/share/mu2edaq-cluster-tools`), `MU2EDAQ_CLUSTER_TOOLS_BIN_DIR` and
+`MU2EDAQ_CLUSTER_TOOLS_APP_CMD` (default `ssh-selector`), each overridden by its
+option; the generic `INSTALL_DIR`/`APP_CMD` are ignored with a warning.
+`--uninstall` removes only the entries in the install manifest
+`DIR/.mu2edaq-cluster-tools-install`. `bootstrap.sh` reads `PYTHON`.
+`ssh-selector` reads `SSH_SELECTOR_CONFIG` (host file; `-c` overrides) and
+searches `./`+`./config/`, `~/.config/mu2edaq/cluster-tools/`, then
+`DIR/config/`.
 
 ## 2. Topology file schema (ssh-selector)
 
