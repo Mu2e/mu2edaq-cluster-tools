@@ -4,13 +4,17 @@
 __version__ = "1.0.1"
 
 import asyncio
+import atexit
+import errno
 import ipaddress
 import os
 import re
 import socket
 import struct
+import signal
 import sys
 import subprocess
+import tempfile
 import argparse
 import getpass
 import shlex
@@ -105,7 +109,10 @@ class Host:
         self, user: str, local_port: int, remote_port: int, skip_proxy: bool = False
     ) -> list[str]:
         """Build an SSH tunnel command: ssh -N -L local:localhost:remote ..."""
-        cmd = ["ssh", "-N", "-L", f"{local_port}:localhost:{remote_port}"]
+        cmd = [
+            "ssh", "-N", "-o", "ExitOnForwardFailure=yes",
+            "-L", f"{local_port}:localhost:{remote_port}",
+        ]
         if self.port != 22:
             cmd.extend(["-p", str(self.port)])
         if self.proxy_jump and not skip_proxy:
@@ -130,6 +137,7 @@ class Config:
     groups: dict[str, GroupConfig] = field(default_factory=dict)
     cache_lifetime: int = 600     # seconds before a user-count result is re-fetched
     panel_width: int = 50         # fixed column width of the right-hand info panel
+    check_concurrency: int = 8    # max simultaneous ssh processes for "Check Users"
 
 
 # ---------------------------------------------------------------------------
@@ -201,13 +209,53 @@ def load_config(config_path: Path) -> Config:
 
     cache_lifetime = int(data.get("cache_lifetime", 600))
     panel_width = int(data.get("panel_width", 50))
+    check_concurrency = _parse_check_concurrency(
+        data.get("check_concurrency", DEFAULT_CHECK_CONCURRENCY), "check_concurrency"
+    )
     return Config(
         hosts=hosts,
         grouplist=grouplist,
         groups=groups,
         cache_lifetime=cache_lifetime,
         panel_width=panel_width,
+        check_concurrency=check_concurrency,
     )
+
+
+# ---------------------------------------------------------------------------
+# "Check Users" concurrency limit
+# ---------------------------------------------------------------------------
+
+# Below OpenSSH's default MaxStartups start value (10), so one jump host never
+# sees more unauthenticated connections from this tool than sshd accepts
+# without starting to drop them.
+DEFAULT_CHECK_CONCURRENCY = 8
+CHECK_CONCURRENCY_ENV = "SSH_SELECTOR_CHECK_CONCURRENCY"
+# Wall-clock limit for one `ssh ... who` probe (ConnectTimeout=5 covers TCP only).
+CHECK_USERS_TIMEOUT = 12.0
+
+
+def _parse_check_concurrency(raw: object, source: str) -> int:
+    """Validate a check-concurrency value; raise ValueError naming *source*."""
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError(f"{source}: expected a positive integer, got {raw!r}") from None
+    if value < 1:
+        raise ValueError(f"{source}: expected a positive integer, got {value}")
+    return value
+
+
+def resolve_check_concurrency(
+    cli_value: Optional[int], environ: "dict[str, str]", config_value: int
+) -> int:
+    """Return the effective limit: command line > environment > YAML config > default."""
+    if cli_value is not None:
+        return _parse_check_concurrency(cli_value, "--check-concurrency")
+    env_value = environ.get(CHECK_CONCURRENCY_ENV, "").strip()
+    if env_value:
+        return _parse_check_concurrency(env_value, CHECK_CONCURRENCY_ENV)
+    return _parse_check_concurrency(config_value, "check_concurrency")
 
 
 # ---------------------------------------------------------------------------
@@ -593,13 +641,14 @@ class SSHErrorModal(ModalScreen):
 
     BINDINGS = [Binding("escape", "dismiss", show=False)]
 
-    def __init__(self, message: str) -> None:
+    def __init__(self, message: str, title: str = "SSH Connection Failed") -> None:
         super().__init__()
         self.message = message
+        self.title_text = title
 
     def compose(self) -> ComposeResult:
         with Vertical(id="error-container"):
-            yield Label("SSH Connection Failed", id="error-title")
+            yield Label(self.title_text, id="error-title")
             yield Static(markup_escape(self.message), id="error-body")
             yield Label("Press any key to return to the host list", id="error-hint")
 
@@ -724,6 +773,73 @@ class TunnelPortModal(ModalScreen[Optional[tuple[int, int, bool]]]):
 
 
 # ---------------------------------------------------------------------------
+# Quit confirmation when background tunnels are running
+# ---------------------------------------------------------------------------
+
+class QuitTunnelsModal(ModalScreen[Optional[str]]):
+    """Ask whether to stop or keep running background tunnels on quit.
+
+    Dismisses with "stop", "keep", or None (cancel, stay in the UI).
+    """
+
+    CSS = """
+    QuitTunnelsModal {
+        align: center middle;
+    }
+
+    #quit-container {
+        width: 70;
+        height: auto;
+        max-height: 24;
+        border: thick $warning;
+        background: $surface;
+        padding: 1 2;
+    }
+
+    #quit-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+
+    #quit-hint {
+        color: $text-muted;
+        text-style: italic;
+        margin-top: 1;
+    }
+    """
+
+    BINDINGS = [
+        Binding("s", "choose('stop')", "Stop tunnels and quit", show=True),
+        Binding("y", "choose('stop')", show=False),
+        Binding("k", "choose('keep')", "Keep tunnels and quit", show=True),
+        Binding("escape", "choose('cancel')", "Cancel", show=True),
+        Binding("n", "choose('cancel')", show=False),
+    ]
+
+    def __init__(self, tunnels: "list[ActiveTunnel]") -> None:
+        super().__init__()
+        self.tunnels = tunnels
+
+    def compose(self) -> ComposeResult:
+        lines = "\n".join(
+            f"  {markup_escape(t.label)}  [dim]pid {t.pid}[/dim]" for t in self.tunnels
+        )
+        with Vertical(id="quit-container"):
+            yield Label(
+                f"{len(self.tunnels)} background tunnel(s) still running", id="quit-title"
+            )
+            yield Static(lines)
+            yield Label(
+                "s: stop them and quit · k: keep them running and quit · Esc: cancel",
+                id="quit-hint",
+            )
+
+    def action_choose(self, choice: str) -> None:
+        self.dismiss(None if choice == "cancel" else choice)
+
+
+# ---------------------------------------------------------------------------
 # Host list items
 # ---------------------------------------------------------------------------
 
@@ -792,6 +908,7 @@ class ActiveTunnel:
     remote_port: int
     process: "subprocess.Popen[bytes]"
     started_at: float   # time.monotonic()
+    log_path: Optional[Path] = None   # file receiving the tunnel's ssh stderr
 
     @property
     def is_alive(self) -> bool:
@@ -800,6 +917,135 @@ class ActiveTunnel:
     @property
     def pid(self) -> int:
         return self.process.pid
+
+    @property
+    def label(self) -> str:
+        return f"localhost:{self.local_port} -> {self.host.nickname}:{self.remote_port}"
+
+    def read_log_tail(self, limit: int = 2000) -> str:
+        """Return the last *limit* bytes of the ssh stderr log, decoded."""
+        if self.log_path is None:
+            return ""
+        try:
+            with open(self.log_path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                f.seek(max(0, f.tell() - limit))
+                return f.read().decode(errors="replace").strip()
+        except OSError:
+            return ""
+
+    def remove_log(self) -> None:
+        if self.log_path is not None:
+            try:
+                self.log_path.unlink()
+            except OSError:
+                pass
+
+
+def _detached_popen_kwargs() -> "dict[str, object]":
+    """Popen kwargs that keep terminal signals (Ctrl-C in a foreground session)
+    from reaching background tunnels; they are stopped explicitly instead."""
+    if sys.platform == "win32":
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
+
+
+def check_local_port(port: int) -> Optional[str]:
+    """Return why *port* cannot be forwarded on loopback, or None if it is free.
+
+    Mirrors what ``ssh -L`` binds by default (127.0.0.1 and ::1, with
+    SO_REUSEADDR on POSIX). A port held on either address counts as in use,
+    because ``localhost:PORT`` could then reach the other listener.
+    """
+    for family, addr in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            sock = socket.socket(family, socket.SOCK_STREAM)
+        except OSError:
+            continue   # address family not supported on this host
+        try:
+            if os.name != "nt":
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            if family == socket.AF_INET6 and hasattr(socket, "IPV6_V6ONLY"):
+                sock.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+            sock.bind((addr, port))
+        except OSError as exc:
+            if exc.errno in (errno.EADDRNOTAVAIL, errno.EAFNOSUPPORT):
+                continue   # e.g. IPv6 loopback not configured
+            if exc.errno in (errno.EADDRINUSE, getattr(errno, "WSAEADDRINUSE", -1)):
+                return f"local port {port} is already in use on {addr}"
+            return f"cannot bind local port {port} on {addr}: {exc.strerror or exc}"
+        finally:
+            sock.close()
+    return None
+
+
+class TunnelRegistry:
+    """Background tunnels owned by one ssh-selector process.
+
+    Created once in main() and handed to every SSHSelector instance, so tunnels
+    survive the UI being rebuilt after a connection, and can be stopped at exit.
+    """
+
+    def __init__(self) -> None:
+        self.tunnels: list[ActiveTunnel] = []
+        self.keep_on_exit = False   # set when the user chose to leave tunnels running
+
+    def add(self, tunnel: ActiveTunnel) -> None:
+        self.tunnels.append(tunnel)
+
+    def alive(self) -> list[ActiveTunnel]:
+        return [t for t in self.tunnels if t.is_alive]
+
+    def find_local_port(self, port: int) -> Optional[ActiveTunnel]:
+        """Return the live tunnel already forwarding local *port*, if any."""
+        for t in self.tunnels:
+            if t.local_port == port and t.is_alive:
+                return t
+        return None
+
+    def remove(self, tunnel: ActiveTunnel, terminate: bool = True) -> None:
+        if terminate:
+            _stop_processes([tunnel.process])
+        self.tunnels = [t for t in self.tunnels if t is not tunnel]
+        tunnel.remove_log()
+
+    def reap_dead(self) -> list[ActiveTunnel]:
+        """Drop tunnels whose ssh exited and return them (logs still on disk)."""
+        dead = [t for t in self.tunnels if not t.is_alive]
+        if dead:
+            self.tunnels = [t for t in self.tunnels if t.is_alive]
+        return dead
+
+    def terminate_all(self) -> None:
+        _stop_processes([t.process for t in self.tunnels])
+        for t in self.tunnels:
+            t.remove_log()
+        self.tunnels = []
+
+    def shutdown(self) -> None:
+        """atexit hook: stop all tunnels unless the user asked to keep them."""
+        if not self.keep_on_exit:
+            self.terminate_all()
+
+
+def _stop_processes(procs: "list[subprocess.Popen[bytes]]", grace: float = 2.0) -> None:
+    """SIGTERM every live process, wait up to *grace* seconds, then SIGKILL."""
+    live = [p for p in procs if p.poll() is None]
+    for p in live:
+        try:
+            p.terminate()
+        except OSError:
+            pass
+    deadline = time.monotonic() + grace
+    for p in live:
+        try:
+            p.wait(timeout=max(0.0, deadline - time.monotonic()))
+        except subprocess.TimeoutExpired:
+            try:
+                p.kill()
+                p.wait(timeout=1)
+            except (OSError, subprocess.TimeoutExpired):
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -1043,7 +1289,9 @@ class SSHSelector(App[AppResult]):
         Binding("escape", "escape_search", "Back to list", show=False),
     ]
 
-    def __init__(self, config: Config, error: str = "") -> None:
+    def __init__(
+        self, config: Config, error: str = "", tunnels: Optional[TunnelRegistry] = None
+    ) -> None:
         super().__init__()
         self.all_hosts = config.hosts
         self.grouplist = config.grouplist
@@ -1058,7 +1306,10 @@ class SSHSelector(App[AppResult]):
         self._panel_width: int = config.panel_width
         # hostname → (count, monotonic timestamp); key absent = never fetched
         self._user_counts: dict[str, tuple[Optional[int], float]] = {}
-        self._active_tunnels: list[ActiveTunnel] = []
+        self._check_concurrency: int = config.check_concurrency
+        self._checks_in_flight: set[str] = set()
+        # Shared with main() so tunnels outlive this UI instance.
+        self._tunnels: TunnelRegistry = tunnels if tunnels is not None else TunnelRegistry()
 
     # ------------------------------------------------------------------
     # Layout
@@ -1093,6 +1344,8 @@ class SSHSelector(App[AppResult]):
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
         self.run_worker(self._resolve_all_hosts(), exclusive=False)
         self.run_worker(self._load_local_networks(), exclusive=False)
+        self.call_after_refresh(self._refresh_tunnel_panel)
+        self.call_after_refresh(self._cleanup_dead_tunnels)
         self.set_interval(5, self._cleanup_dead_tunnels)
 
     # ------------------------------------------------------------------
@@ -1292,6 +1545,10 @@ class SSHSelector(App[AppResult]):
                 if result is None:
                     return
                 local_port, remote_port, background = result
+                problem = self._local_port_problem(local_port)
+                if problem:
+                    self.push_screen(SSHErrorModal(problem, title="Tunnel Not Started"))
+                    return
                 if background:
                     self._start_background_tunnel(host, user, local_port, remote_port, skip_proxy)
                 else:
@@ -1315,35 +1572,74 @@ class SSHSelector(App[AppResult]):
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
+    def _local_port_problem(self, local_port: int) -> Optional[str]:
+        """Return a message if *local_port* cannot be used for a new tunnel."""
+        existing = self._tunnels.find_local_port(local_port)
+        if existing is not None:
+            return (
+                f"Local port {local_port} is already forwarded by the background tunnel\n"
+                f"  {existing.label}  (pid {existing.pid}).\n"
+                "Kill it in the Tunnels panel (k) or choose another local port."
+            )
+        reason = check_local_port(local_port)
+        if reason:
+            return f"{reason[0].upper()}{reason[1:]}.\nChoose another local port."
+        return None
+
     def _start_background_tunnel(
         self, host: Host, user: str, local_port: int, remote_port: int, skip_proxy: bool
     ) -> None:
         """Launch an SSH tunnel as a background process and register it."""
         cmd = host.tunnel_command(user, local_port, remote_port, skip_proxy=skip_proxy)
+        log_path: Optional[Path] = None
         try:
-            proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            fd, name = tempfile.mkstemp(prefix=f"ssh-selector-tunnel-{local_port}-", suffix=".log")
+            log_path = Path(name)
+            with os.fdopen(fd, "wb") as log:
+                proc = subprocess.Popen(
+                    cmd,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=log,
+                    **_detached_popen_kwargs(),
+                )
         except Exception as exc:
-            self.push_screen(SSHErrorModal(str(exc)))
+            if log_path is not None:
+                try:
+                    log_path.unlink()
+                except OSError:
+                    pass
+            self.push_screen(SSHErrorModal(str(exc), title="Tunnel Not Started"))
             return
-        self._active_tunnels.append(ActiveTunnel(
+        self._tunnels.add(ActiveTunnel(
             host=host,
             user=user,
             local_port=local_port,
             remote_port=remote_port,
             process=proc,
             started_at=time.monotonic(),
+            log_path=log_path,
         ))
         self._refresh_tunnel_panel()
 
     def _refresh_tunnel_panel(self) -> None:
-        self.query_one(TunnelPanel).refresh_tunnels(self._active_tunnels)
+        self.query_one(TunnelPanel).refresh_tunnels(self._tunnels.tunnels)
 
     def _cleanup_dead_tunnels(self) -> None:
-        """Remove any background tunnels whose SSH process has exited."""
-        before = len(self._active_tunnels)
-        self._active_tunnels = [t for t in self._active_tunnels if t.is_alive]
-        if len(self._active_tunnels) != before:
-            self._refresh_tunnel_panel()
+        """Remove background tunnels whose SSH process has exited and report why."""
+        dead = self._tunnels.reap_dead()
+        if not dead:
+            return
+        reports = []
+        for t in dead:
+            detail = t.read_log_tail()
+            reports.append(
+                f"{t.label} exited with status {t.process.returncode}"
+                + (f":\n{detail}" if detail else ".")
+            )
+            t.remove_log()
+        self._refresh_tunnel_panel()
+        self.push_screen(SSHErrorModal("\n\n".join(reports), title="Tunnel Closed"))
 
     # ------------------------------------------------------------------
     # Event handlers
@@ -1389,10 +1685,7 @@ class SSHSelector(App[AppResult]):
 
     def on_tunnel_panel_kill_requested(self, event: TunnelPanel.KillRequested) -> None:
         """Terminate a background tunnel when the user kills it from the panel."""
-        tunnel = event.tunnel
-        if tunnel.is_alive:
-            tunnel.process.terminate()
-        self._active_tunnels = [t for t in self._active_tunnels if t is not tunnel]
+        self._tunnels.remove(event.tunnel, terminate=True)
         self._refresh_tunnel_panel()
 
     @on(Input.Changed, "#search-bar")
@@ -1426,12 +1719,43 @@ class SSHSelector(App[AppResult]):
     def action_about(self) -> None:
         self.push_screen(AboutModal())
 
+    def action_quit(self) -> None:
+        """Quit, asking first whether to stop any running background tunnels."""
+        if isinstance(self.screen, QuitTunnelsModal):
+            return   # already asking
+        live = self._tunnels.alive()
+        if not live:
+            self.exit(None)
+            return
+
+        def on_choice(choice: Optional[str]) -> None:
+            if choice == "stop":
+                self._tunnels.terminate_all()
+                self.exit(None)
+            elif choice == "keep":
+                self._tunnels.keep_on_exit = True
+                self.exit(None)
+
+        self.push_screen(QuitTunnelsModal(live), on_choice)
+
     def action_check_users(self) -> None:
         self.run_worker(self._check_all_user_counts(), exclusive=False)
 
     async def _check_all_user_counts(self) -> None:
-        """SSH into every host concurrently and count logged-in users via `who`."""
-        await asyncio.gather(*[self._check_user_count_one(h) for h in self.all_hosts])
+        """Count logged-in users on every host, at most check_concurrency at a time.
+
+        Hosts with a fresh cached count or a probe already running are skipped,
+        so pressing c again does not add a second wave of connections.
+        """
+        limit = asyncio.Semaphore(self._check_concurrency)
+
+        async def _limited(host: Host) -> None:
+            if self._user_count_is_fresh(host.hostname):
+                return
+            async with limit:
+                await self._check_user_count_one(host)
+
+        await asyncio.gather(*[_limited(h) for h in self.all_hosts])
 
     def _user_count_is_fresh(self, hostname: str) -> bool:
         """Return True if a cached count exists and has not yet expired."""
@@ -1443,6 +1767,18 @@ class SSHSelector(App[AppResult]):
     async def _check_user_count_one(self, host: Host) -> None:
         if self._user_count_is_fresh(host.hostname):
             return  # cached result still valid — nothing to do
+        if host.hostname in self._checks_in_flight:
+            return  # a probe for this host is already running
+        self._checks_in_flight.add(host.hostname)
+        try:
+            count = await self._probe_user_count(host)
+        finally:
+            self._checks_in_flight.discard(host.hostname)
+        self._user_counts[host.hostname] = (count, time.monotonic())
+        self._show_user_count(host.hostname, count)
+
+    async def _probe_user_count(self, host: Host) -> Optional[int]:
+        """Run `ssh ... who` on *host*; return the line count or None on failure."""
         skip_proxy = self._should_skip_proxy(host)
         base = host.ssh_command(host.users[0], skip_proxy=skip_proxy)
         # Insert non-interactive options right after 'ssh'
@@ -1452,23 +1788,36 @@ class SSHSelector(App[AppResult]):
             + base[1:]
             + ["who"]
         )
+        proc = None
         try:
             proc = await asyncio.create_subprocess_exec(
                 *cmd,
+                stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
-            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=12)
+            stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CHECK_USERS_TIMEOUT)
+            if proc.returncode != 0:
+                return None
             lines = [l for l in stdout.decode().splitlines() if l.strip()]
-            count: Optional[int] = len(lines)
+            return len(lines)
         except Exception:
-            count = None
-        self._user_counts[host.hostname] = (count, time.monotonic())
+            return None
+        finally:
+            # A timed-out probe must not keep holding a jump-host connection.
+            if proc is not None and proc.returncode is None:
+                try:
+                    proc.kill()
+                    await proc.wait()
+                except Exception:
+                    pass
+
+    def _show_user_count(self, hostname: str, count: Optional[int]) -> None:
         # Update every list item that contains this host
         for item in self.query(HostPairItem):
-            item.set_user_count(host.hostname, count)
+            item.set_user_count(hostname, count)
         # Refresh the detail panel if this host is selected
-        if self._selected_host and self._selected_host.hostname == host.hostname:
+        if self._selected_host and self._selected_host.hostname == hostname:
             self._update_detail(self._selected_host)
 
     def action_renew_kerberos(self) -> None:
@@ -1689,6 +2038,40 @@ def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
     return status, ""
 
 
+def _install_tunnel_shutdown(tunnels: TunnelRegistry) -> None:
+    """Stop background tunnels on any interpreter exit unless the user kept them."""
+    atexit.register(tunnels.shutdown)
+
+    def _stop_then_resignal(signum: int, _frame: object) -> None:
+        # atexit does not run on a fatal signal: stop the tunnels here, then
+        # die with the default action exactly as before this handler existed.
+        tunnels.shutdown()
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for name in ("SIGHUP", "SIGTERM"):
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                signal.signal(sig, _stop_then_resignal)
+            except (OSError, ValueError):
+                pass
+
+
+def _report_kept_tunnels(tunnels: TunnelRegistry) -> None:
+    """Tell the user which tunnels were left running at quit and how to stop them."""
+    if not tunnels.keep_on_exit:
+        return
+    live = tunnels.alive()
+    if not live:
+        return
+    print("Background tunnels left running:")
+    for t in live:
+        log = f"  log {t.log_path}" if t.log_path else ""
+        print(f"  pid {t.pid}  {t.label}{log}")
+    print(f"Stop them with: kill {' '.join(str(t.pid) for t in live)}")
+
+
 # ---------------------------------------------------------------------------
 
 def main() -> None:
@@ -1707,6 +2090,17 @@ Config file search order (when -c is not given):
         "-c", "--config",
         metavar="FILE",
         help="Path to a YAML config file. Skips auto-discovery when given.",
+    )
+    parser.add_argument(
+        "--check-concurrency",
+        metavar="N",
+        type=int,
+        default=None,
+        help=(
+            "Maximum simultaneous ssh connections for Check Users "
+            f"(overrides ${CHECK_CONCURRENCY_ENV} and the check_concurrency "
+            f"config key; default {DEFAULT_CHECK_CONCURRENCY})."
+        ),
     )
     parser.add_argument(
         "--version",
@@ -1742,12 +2136,23 @@ Config file search order (when -c is not given):
     if not config.hosts:
         sys.exit("No hosts defined in config file.")
 
+    try:
+        config.check_concurrency = resolve_check_concurrency(
+            args.check_concurrency, dict(os.environ), config.check_concurrency
+        )
+    except ValueError as exc:
+        sys.exit(f"Error: {exc}")
+
+    tunnels = TunnelRegistry()
+    _install_tunnel_shutdown(tunnels)
+
     ssh_error = ""
     while True:
-        app = SSHSelector(config, error=ssh_error)
+        app = SSHSelector(config, error=ssh_error, tunnels=tunnels)
         result: AppResult = app.run()
 
         if result is None:
+            _report_kept_tunnels(tunnels)
             sys.exit(0)
 
         host = result.host
