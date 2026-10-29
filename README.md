@@ -25,13 +25,13 @@ What does it do?
 - **Two-column layout** — hosts are displayed side by side for compact browsing; use left/right arrows to select within a row
 - **Per-group and per-host configuration** — groups have common config settings that can be overridden by per host testtings (i.e. all tracker nodes use the same jump host and user list, but one special node that got pulled out to lab 3 uses a different jump proxy) 
 - **Multiple users per host** — choose which user you are using for a connection from a list of configured users
-- **Host DNS resolution on startup** — each host is resolved in the background; a green/red dot indicates reachability
+- **Host DNS resolution on startup** — each host is resolved in the background; a green/red dot shows whether the hostname resolved in DNS (not whether the host answers)
 - **Host Population Report** - each host is queried to see how crowded it is
 - **Automatic proxy skip** — if the destination host is on the same local subnet as the client, the configured proxy jump is automatically bypassed
 - **SSH tunnel mode** — open a port-forward tunnel (`ssh -N -L`) instead of an interactive shell; prompts for local and remote port numbers
 - **Kerberos ticket panel** — displays active tickets with time-to-expiry color coding; `r` renews the principal via `kinit -R`
 - **Network info panel** — shows local hostname, IP, domain, and detected subnets
-- **Error Displays** — if a connection fails, the stderr output is displayed so you can debug it
+- **Error Displays** — `ssh`'s stderr is shown live in the terminal; if `ssh` itself fails (exit status 255) its last stderr output is also shown in a dialog so you can debug it
 - **Multiple config files** — auto-discovers `*.yaml` files in `./` and `./config/`; shows a picker when more than one is found
 - **Foreground and Background Tunnels** - starts ssh tunnels in either background or foreground
 
@@ -150,7 +150,7 @@ See `man/man1/ssh-selector.1` (`man ./man/man1/ssh-selector.1`) for full option 
 | `Enter` | Connect (interactive shell) |
 | `n` | Connect in a new terminal window |
 | `t` | Open SSH tunnel (prompts for ports) |
-| `c` | Check which users are logged in on the selected host |
+| `c` | Check how many users are logged in on every configured host |
 | `/` | Filter host list |
 | `r` | Renew Kerberos ticket (`kinit -R`) |
 | `A` | About screen |
@@ -160,7 +160,7 @@ See `man/man1/ssh-selector.1` (`man ./man/man1/ssh-selector.1`) for full option 
 
 ## Configuration
 
-Config files are YAML. There is a fully annotated config provided (See [`config/hosts.yaml.example`](config/hosts.yaml.example) for a fully annotated example), as well as a config for the MC-2 cluster.  I'll add one for the gpvms and other groups shortly.
+Config files are YAML. There is a fully annotated config provided (See [`config/hosts.yaml.example`](config/hosts.yaml.example) for a fully annotated example), as well as configs for the Mu2e DAQ cluster ([`config/mu2e_daq.yaml`](config/mu2e_daq.yaml)), the Mu2e offline machines ([`config/mu2e_offline.yaml`](config/mu2e_offline.yaml)), NOvA DAQ ([`config/nova_daq.yaml`](config/nova_daq.yaml)) and the Fermilab GPVMs ([`config/fnal_gpvm.yaml`](config/fnal_gpvm.yaml)).
 
 The general format is fairly self documenting.
 

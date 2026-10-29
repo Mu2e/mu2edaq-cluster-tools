@@ -39,7 +39,7 @@ runtime:
     - config/mu2e_daq.yaml
     - config/mu2e_offline.yaml
     - config/nova_daq.yaml
-    - config/fnal_gpmv.yaml
+    - config/fnal_gpvm.yaml
     - config/example.yaml
     - config/hosts.yaml.example
     - config/lan_scan-mu2edaq.yaml
