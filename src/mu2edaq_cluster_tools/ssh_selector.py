@@ -1115,8 +1115,63 @@ AppResult = Optional[ConnectionRequest]
 
 
 class SSHSelector(App[AppResult]):
-    """Interactive SSH host selector."""
+    """!
+    @brief Interactive Textual TUI that lets an operator pick a DAQ host and
+           connect to it (shell, new terminal window, or port-forward tunnel).
 
+    @par State
+    - `all_hosts` / `grouplist`: immutable host inventory and group ordering
+      taken from the loaded Config.
+    - `filtered_hosts`: subset of `all_hosts` matching the search bar; the
+      ListView is rebuilt from it on every keystroke.
+    - `_selected_host` / `_column`: the host under the cursor.  Rows are
+      HostPairItem pairs, so the selection is (row, column) and left/right
+      move between the two columns.
+    - `_host_ips`: DNS cache, hostname -> IPv4 string, None when the lookup
+      failed, key absent while the lookup is still pending.  Filled once per
+      app instance at mount.
+    - `_local_networks`: IPv4 subnets of the local interfaces, used to decide
+      whether the proxy jump can be skipped.
+    - `_user_counts`: Check Users cache, hostname -> (count or None,
+      time.monotonic() of the probe).  Entries younger than
+      `_cache_lifetime` seconds are "fresh" and not re-probed.
+    - `_check_concurrency`: upper bound on simultaneous `ssh ... who` probes,
+      enforced by an asyncio.Semaphore created per Check Users wave.
+    - `_checks_in_flight`: hostnames with a probe currently running, so a
+      second press of c cannot start duplicate probes.
+    - `_tunnels`: the TunnelRegistry of background `ssh -N -L` processes.
+      It is owned by main(), not by this instance.
+
+    @par Lifecycle
+    main() runs this app in a loop.  The app never execs ssh itself for an
+    interactive session: it calls exit() with an AppResult (a
+    ConnectionRequest, or None for quit).  main() then tears down the
+    Textual screen, runs the foreground ssh / tunnel / new-terminal launch
+    on the real TTY, and when that returns constructs a fresh SSHSelector
+    (passing the previous ssh error text and the same TunnelRegistry).
+    Hence all per-instance caches (DNS, user counts, local networks) are
+    rebuilt on every return to the selector, while background tunnels
+    persist across rebuilds.
+
+    @par Thread affinity
+    Every method of this class runs on the Textual asyncio event loop.  The
+    workers started with run_worker() are async coroutines (not @work
+    threads), so they may touch widgets and instance state directly without
+    call_from_thread().  Blocking calls are pushed off the loop explicitly:
+    gethostbyname via loop.run_in_executor(), and ssh/kinit via
+    asyncio.create_subprocess_exec().  Any future thread worker must use
+    call_from_thread() for widget updates.
+
+    @note Background tunnels are started detached (new session on POSIX,
+          CREATE_NEW_PROCESS_GROUP on Windows) so Ctrl-C in a later
+          foreground ssh session does not kill them.
+    @see main(), TunnelRegistry, ConnectionRequest, _install_tunnel_shutdown()
+    """
+
+    # Layout: search bar on top; host list (flexible width) on the left; a
+    # fixed-width right column (width overridden from config.panel_width in
+    # on_mount) stacking detail / Kerberos / network / tunnel panels.  The
+    # panel heights are percentages of the right column and sum to 100%.
     CSS = """
     Screen {
         layout: vertical;
@@ -1276,22 +1331,48 @@ class SSHSelector(App[AppResult]):
     }
     """
 
+    # App-level key bindings shown in the Footer.  Bindings on a focused
+    # widget (e.g. TunnelPanel's k/Delete, Input editing keys) take
+    # precedence, which is why "q" and "c" are inert while typing in the
+    # search bar.
     BINDINGS = [
+        # Open an interactive ssh session in this terminal (app exits first).
         Binding("enter", "connect", "Connect", show=True),
+        # Launch ssh in a new terminal window; the selector stays usable.
         Binding("n", "new_terminal", "New Terminal"),
+        # Port-forward: foreground tunnel, or background tunnel in the registry.
         Binding("t", "tunnel", "Tunnel"),
+        # Probe logged-in user counts on all hosts (bounded concurrency).
         Binding("c", "check_users", "Check Users"),
+        # Shift-c alias so a caps-lock/shifted press still works; hidden.
         Binding("C", "check_users", show=False),
+        # Move focus to the filter Input.
         Binding("/", "focus_search", "Search"),
+        # kinit -R: renew the existing TGT without a password prompt.
         Binding("r", "renew_kerberos", "Renew Kerberos"),
+        # Capital A to avoid accidental activation while navigating.
         Binding("A", "about", "About"),
+        # Quit; asks first if background tunnels are alive.
         Binding("q", "quit", "Quit"),
+        # Leave the search bar (clearing it), or quit from the list.
         Binding("escape", "escape_search", "Back to list", show=False),
     ]
 
     def __init__(
         self, config: Config, error: str = "", tunnels: Optional[TunnelRegistry] = None
     ) -> None:
+        """!
+        @brief Build a selector instance for one pass of main()'s UI loop.
+
+        @param config   Loaded host Config (hosts, grouplist, cache_lifetime,
+                        panel_width, check_concurrency already resolved
+                        against CLI/env overrides by main()).
+        @param error    stderr tail of the previous foreground ssh that exited
+                        with status 255; shown in an SSHErrorModal at mount.
+                        Empty string for no error.
+        @param tunnels  Registry shared across rebuilds.  None creates a
+                        private registry (used by tests).
+        """
         super().__init__()
         self.all_hosts = config.hosts
         self.grouplist = config.grouplist
@@ -1299,16 +1380,28 @@ class SSHSelector(App[AppResult]):
         self._selected_host: Optional[Host] = config.hosts[0] if config.hosts else None
         self._startup_error = error
         self._column: int = 0   # 0 = left, 1 = right (two-column list)
+        # Three-state DNS cache: the "absent" state drives the "resolving…"
+        # text in the detail panel, distinct from a failed lookup.
         # hostname → resolved IP (None = lookup failed, key absent = not yet checked)
         self._host_ips: dict[str, Optional[str]] = {}
         self._local_networks: list[ipaddress.IPv4Network] = []
         self._cache_lifetime: int = config.cache_lifetime
         self._panel_width: int = config.panel_width
         # hostname → (count, monotonic timestamp); key absent = never fetched
+        # count None = probe failed (unreachable, auth refused, timeout).
+        # time.monotonic() so wall-clock jumps (NTP, DST) cannot make an
+        # entry look fresh forever or expire instantly.
         self._user_counts: dict[str, tuple[Optional[int], float]] = {}
+        # Bounded below sshd's MaxStartups (default 10:30:100) because all
+        # probes to hosts behind the same proxy_jump arrive at that gateway's
+        # sshd as concurrent unauthenticated connections; above the start
+        # value sshd begins randomly dropping them.  See
+        # DEFAULT_CHECK_CONCURRENCY.
         self._check_concurrency: int = config.check_concurrency
         self._checks_in_flight: set[str] = set()
-        # Shared with main() so tunnels outlive this UI instance.
+        # Shared with main() so tunnels outlive this UI instance: the app is
+        # torn down and rebuilt around every foreground ssh session, but a
+        # background port-forward must keep running through that.
         self._tunnels: TunnelRegistry = tunnels if tunnels is not None else TunnelRegistry()
 
     # ------------------------------------------------------------------
@@ -1316,6 +1409,14 @@ class SSHSelector(App[AppResult]):
     # ------------------------------------------------------------------
 
     def compose(self) -> ComposeResult:
+        """!
+        @brief Build the widget tree (Textual compose hook, called once at start).
+
+        The host list is populated from `all_hosts`; status dots and user
+        counts are filled in later by the mount-time workers.
+
+        @return Generator of widgets forming the screen layout.
+        """
         yield Header(show_clock=True)
         yield Input(placeholder="Filter hosts  (press / to focus)", id="search-bar")
         with Horizontal(id="main"):
@@ -1337,15 +1438,32 @@ class SSHSelector(App[AppResult]):
         yield Footer()
 
     def on_mount(self) -> None:
+        """!
+        @brief Textual Mount handler: apply config, start background lookups,
+               and arm the tunnel watchdog.
+
+        Runs once per app instance, i.e. after every return from a
+        foreground ssh session.
+        """
+        # CSS cannot read config; panel_width is applied programmatically.
         self.query_one("#right-panel").styles.width = self._panel_width
         self._update_detail(self._selected_host)
         self.query_one("#list").focus()
         if self._startup_error:
+            # Deferred until after the first refresh so the modal stacks on
+            # top of a fully laid-out screen rather than racing compose.
             self.call_after_refresh(self.push_screen, SSHErrorModal(self._startup_error))
+        # Both are async workers on the event loop; exclusive=False so they
+        # run side by side and are not cancelled by each other.
         self.run_worker(self._resolve_all_hosts(), exclusive=False)
         self.run_worker(self._load_local_networks(), exclusive=False)
+        # Tunnels started by a previous instance are already in the shared
+        # registry; show them and report any that died while the UI was
+        # down (e.g. during a foreground ssh session).
         self.call_after_refresh(self._refresh_tunnel_panel)
         self.call_after_refresh(self._cleanup_dead_tunnels)
+        # 5 s polling: cheap Popen.poll() per tunnel, and fast enough that
+        # an operator learns a forward dropped before relying on it.
         self.set_interval(5, self._cleanup_dead_tunnels)
 
     # ------------------------------------------------------------------
@@ -1354,14 +1472,30 @@ class SSHSelector(App[AppResult]):
 
     @staticmethod
     def _pair_hosts(group_hosts: list[Host]) -> list[HostPairItem]:
-        """Convert a flat host list into two-column HostPairItem rows."""
+        """!
+        @brief Convert a flat host list into two-column HostPairItem rows.
+
+        @param group_hosts  Hosts of one group, in display order.
+        @return Rows of two hosts each; the last row holds one host when the
+                count is odd.
+        """
         return [
             HostPairItem(group_hosts[i: i + 2])
             for i in range(0, len(group_hosts), 2)
         ]
 
     def _build_list_items(self, hosts: list[Host]) -> list[ListItem]:
-        """Return ListItems organized by group, with GroupHeader separators."""
+        """!
+        @brief Build the host ListView contents, grouped with GroupHeader rows.
+
+        Order: groups named in `grouplist` (in that order, empty ones
+        omitted), then groups present on hosts but not listed (first-seen
+        order), then hosts with no group under "Other".  Without a
+        grouplist the hosts are paired flat with no headers.
+
+        @param hosts  Hosts to display (usually `filtered_hosts`).
+        @return ListItems ready to append to the ListView.
+        """
         if not self.grouplist:
             return self._pair_hosts(hosts)
 
@@ -1394,11 +1528,17 @@ class SSHSelector(App[AppResult]):
         return items
 
     def _repopulate_list(self) -> None:
+        """!
+        @brief Rebuild the host ListView from `filtered_hosts` and reset the
+               selection to the first match.
+        """
         lv = self.query_one("#list", ListView)
         lv.clear()
         for item in self._build_list_items(self.filtered_hosts):
             lv.append(item)
         # Re-apply any already-cached DNS and user-count status to freshly created items
+        # (new HostPairItems start with the "~" placeholder; without this
+        # every keystroke in the search bar would blank the status columns).
         for item in lv.query(HostPairItem):
             for host in item.hosts:
                 if host.hostname in self._host_ips:
@@ -1411,32 +1551,74 @@ class SSHSelector(App[AppResult]):
         self._update_detail(self._selected_host)
 
     async def _resolve_all_hosts(self) -> None:
-        """Resolve every host's DNS concurrently and update status indicators."""
+        """!
+        @brief Resolve every host's DNS concurrently and update status dots.
+
+        Async worker started from on_mount().  The dot next to each host
+        means: "~" lookup pending, green "●" name resolves, red "●" name
+        does not resolve from this machine (typo, private DAQ zone not
+        visible from here, or VPN down).  A green dot says nothing about
+        whether sshd is reachable.
+        """
         loop = asyncio.get_event_loop()
 
         async def _one(host: Host) -> None:
+            """!
+            @brief Resolve one host and push the result into the UI.
+            @param host  Host whose hostname is looked up.
+            """
             try:
+                # gethostbyname blocks (resolver timeouts can be seconds);
+                # run it in the default executor so the UI stays live.
                 ip: Optional[str] = await loop.run_in_executor(
                     None, socket.gethostbyname, host.hostname
                 )
             except Exception:
+                # Any resolver error (gaierror, herror, UnicodeError) is
+                # simply "not resolvable" for display purposes.
                 ip = None
             self._host_ips[host.hostname] = ip
+            # The row holding this host is not tracked, and the list may
+            # have been rebuilt by a search, so update every HostPairItem.
             for item in self.query(HostPairItem):
                 item.set_status(host.hostname, ip)
             if self._selected_host and self._selected_host.hostname == host.hostname:
+                # The proxy-skip decision depends on the IP, so the detail
+                # panel must be redrawn once it is known.
                 self._update_detail(self._selected_host)
 
+        # Unbounded fan-out is fine here: DNS queries go to the local
+        # resolver, not to the DAQ hosts, and the executor caps threads.
         await asyncio.gather(*(_one(h) for h in self.all_hosts))
 
     async def _load_local_networks(self) -> None:
-        """Detect local subnets and cache them; refresh detail panel after."""
+        """!
+        @brief Detect local IPv4 subnets, cache them, and redraw the detail panel.
+
+        Async worker started from on_mount().
+        @note Uses `ip addr` on Linux and `ifconfig` on macOS (see
+              _detect_local_networks_sync()); on Windows neither exists, the
+              list stays empty, and the proxy jump is never skipped.
+        """
         self._local_networks = await detect_local_networks()
         if self._selected_host:
             self._update_detail(self._selected_host)
 
     def _should_skip_proxy(self, host: Host) -> bool:
-        """Return True if the host's IP is within a local subnet (proxy not needed)."""
+        """!
+        @brief Decide whether the proxy jump can be bypassed for *host*.
+
+        True when the host's resolved IPv4 address lies inside one of this
+        machine's directly attached subnets, i.e. the operator is already
+        inside the DAQ enclave and the gateway hop would only add latency
+        and a second authentication.
+
+        @param host  Candidate destination.
+        @return True to connect directly, False to honour proxy_jump.
+        """
+        # Fail safe: with no proxy configured, or subnets / IP not known
+        # yet, keep the configured route.  Skipping the gateway wrongly
+        # would fail to connect from outside the enclave.
         if not host.proxy_jump or not self._local_networks:
             return False
         dest_ip = self._host_ips.get(host.hostname)
@@ -1449,6 +1631,15 @@ class SSHSelector(App[AppResult]):
             return False
 
     def _update_detail(self, host: Optional[Host]) -> None:
+        """!
+        @brief Redraw the detail panel for *host*.
+
+        Shows hostname, resolved IP, port, effective proxy jump, cached
+        logged-in user count (with age and stale marker), configured users,
+        and the ssh command line for the default user.
+
+        @param host  Host to describe, or None when the filter matches nothing.
+        """
         panel = self.query_one("#detail-content", Static)
         if host is None:
             panel.update("[dim]No host selected.[/dim]")
@@ -1478,6 +1669,9 @@ class SSHSelector(App[AppResult]):
         users_str = "\n".join(user_lines)
 
         # Logged-in user count
+        # Stale counts are still displayed (with their age) rather than
+        # hidden: an old number is better than none, and the operator can
+        # decide whether to press c again.
         if host.hostname not in self._user_counts:
             logged_in_str = "[dim]press c to check[/dim]"
         else:
@@ -1489,6 +1683,8 @@ class SSHSelector(App[AppResult]):
             if count is None:
                 logged_in_str = f"[dim]unreachable[/dim]{age_tag}{stale_tag}"
             else:
+                # Yellow = someone is logged in; a hint to coordinate
+                # before restarting DAQ processes on that node.
                 color = "green" if count == 0 else "yellow"
                 logged_in_str = f"[{color}]{count}[/{color}]{age_tag}{stale_tag}"
 
@@ -1509,19 +1705,41 @@ class SSHSelector(App[AppResult]):
         )
 
     def _choose_and_exit(self, host: Host) -> None:
-        """Exit with a shell ConnectionRequest, showing the user modal only when needed."""
+        """!
+        @brief Exit the app with a shell ConnectionRequest for *host*.
+
+        Shows UserSelectModal only when the host lists more than one user.
+        main() runs the ssh session in the foreground after exit.
+
+        @param host  Destination host.
+        """
+        # Decided now, while the DNS/subnet caches are populated; main()
+        # has no access to them after the app exits.
         skip_proxy = self._should_skip_proxy(host)
         if len(host.users) == 1:
             self.exit(ConnectionRequest(host=host, user=host.users[0], skip_proxy=skip_proxy))
         else:
             def on_user_chosen(user: Optional[str]) -> None:
+                """!
+                @brief UserSelectModal callback.
+                @param user  Chosen user entry, or None if the modal was cancelled.
+                """
                 if user is not None:
                     self.exit(ConnectionRequest(host=host, user=user, skip_proxy=skip_proxy))
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
     def _choose_new_terminal(self, host: Host) -> None:
-        """Exit with a new_terminal ConnectionRequest, showing user modal only when needed."""
+        """!
+        @brief Exit the app with a new_terminal ConnectionRequest for *host*.
+
+        main() spawns the ssh command in a new terminal window and
+        immediately rebuilds the selector.
+
+        @param host  Destination host.
+        @note The terminal emulator used is platform specific; see
+              _open_in_new_terminal().
+        """
         skip_proxy = self._should_skip_proxy(host)
         if len(host.users) == 1:
             self.exit(ConnectionRequest(
@@ -1529,6 +1747,10 @@ class SSHSelector(App[AppResult]):
             ))
         else:
             def on_user_chosen(user: Optional[str]) -> None:
+                """!
+                @brief UserSelectModal callback.
+                @param user  Chosen user entry, or None if the modal was cancelled.
+                """
                 if user is not None:
                     self.exit(ConnectionRequest(
                         host=host, user=user, skip_proxy=skip_proxy, mode="new_terminal"
@@ -1537,14 +1759,36 @@ class SSHSelector(App[AppResult]):
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
     def _choose_tunnel(self, host: Host) -> None:
-        """Start tunnel flow: pick user (if needed), then prompt for port numbers."""
+        """!
+        @brief Run the tunnel flow: pick a user if needed, then ask for ports.
+
+        A foreground tunnel exits the app with mode="tunnel" (main() runs
+        `ssh -N -L` until Ctrl-C).  A background tunnel is started in-process
+        and registered, and the selector stays open.
+
+        @param host  Destination host for the port forward.
+        @see TunnelPortModal, _start_background_tunnel()
+        """
         skip_proxy = self._should_skip_proxy(host)
 
         def show_port_modal(user: str) -> None:
+            """!
+            @brief Push TunnelPortModal for *user*.
+            @param user  Login user for the tunnel's ssh.
+            """
             def on_ports_chosen(result: Optional[tuple[int, int, bool]]) -> None:
+                """!
+                @brief TunnelPortModal callback; validates and starts the tunnel.
+                @param result  (local_port, remote_port, background), or None
+                               if the modal was cancelled.
+                """
                 if result is None:
                     return
                 local_port, remote_port, background = result
+                # Pre-check the local bind in the UI.  ssh would also fail
+                # (tunnel_command sets ExitOnForwardFailure=yes), but only
+                # after the TUI has been torn down (foreground) or as a
+                # "Tunnel Closed" popup seconds later (background).
                 problem = self._local_port_problem(local_port)
                 if problem:
                     self.push_screen(SSHErrorModal(problem, title="Tunnel Not Started"))
@@ -1567,13 +1811,25 @@ class SSHSelector(App[AppResult]):
             show_port_modal(host.users[0])
         else:
             def on_user_chosen(user: Optional[str]) -> None:
+                """!
+                @brief UserSelectModal callback; continues to the port modal.
+                @param user  Chosen user entry, or None if the modal was cancelled.
+                """
                 if user is not None:
                     show_port_modal(user)
 
             self.push_screen(UserSelectModal(host), on_user_chosen)
 
     def _local_port_problem(self, local_port: int) -> Optional[str]:
-        """Return a message if *local_port* cannot be used for a new tunnel."""
+        """!
+        @brief Explain why *local_port* cannot be used for a new tunnel.
+
+        @param local_port  Loopback port the operator wants to forward.
+        @return Operator-facing message, or None if the port is usable.
+        """
+        # Our own tunnels are checked first so the message can name the
+        # offending tunnel and point at the k key, rather than a generic
+        # "in use" from the bind probe.
         existing = self._tunnels.find_local_port(local_port)
         if existing is not None:
             return (
@@ -1589,18 +1845,41 @@ class SSHSelector(App[AppResult]):
     def _start_background_tunnel(
         self, host: Host, user: str, local_port: int, remote_port: int, skip_proxy: bool
     ) -> None:
-        """Launch an SSH tunnel as a background process and register it."""
+        """!
+        @brief Launch `ssh -N -L` as a detached background process and register it.
+
+        Failures to start (ssh missing, temp dir unwritable) are shown in an
+        SSHErrorModal rather than raised.
+
+        @param host         Destination host.
+        @param user         Login user entry for ssh.
+        @param local_port   Loopback port to listen on.
+        @param remote_port  Port on *host* to forward to.
+        @param skip_proxy   True to bypass the host's proxy_jump.
+        @warning The tunnel's ssh runs with stdin closed, so it cannot prompt.
+                 It needs a valid Kerberos ticket or agent key; otherwise it
+                 exits at once and is reported by _cleanup_dead_tunnels().
+        """
         cmd = host.tunnel_command(user, local_port, remote_port, skip_proxy=skip_proxy)
         log_path: Optional[Path] = None
         try:
+            # stderr goes to a per-tunnel temp file so that, when the tunnel
+            # dies later, the "Tunnel Closed" dialog can show ssh's reason
+            # (auth failure, remote port refused, network drop).
             fd, name = tempfile.mkstemp(prefix=f"ssh-selector-tunnel-{local_port}-", suffix=".log")
             log_path = Path(name)
+            # The parent's copy of the fd is closed on leaving the with
+            # block; the child keeps its own inherited copy.
             with os.fdopen(fd, "wb") as log:
                 proc = subprocess.Popen(
                     cmd,
+                    # DEVNULL stdin: Textual owns the TTY; a prompting ssh
+                    # would corrupt the screen and steal keystrokes.
                     stdin=subprocess.DEVNULL,
                     stdout=subprocess.DEVNULL,
                     stderr=log,
+                    # Own session / process group: Ctrl-C in a later
+                    # foreground ssh must not reach background tunnels.
                     **_detached_popen_kwargs(),
                 )
         except Exception as exc:
@@ -1623,10 +1902,19 @@ class SSHSelector(App[AppResult]):
         self._refresh_tunnel_panel()
 
     def _refresh_tunnel_panel(self) -> None:
+        """!
+        @brief Redraw the Tunnels panel from the shared registry.
+        """
         self.query_one(TunnelPanel).refresh_tunnels(self._tunnels.tunnels)
 
     def _cleanup_dead_tunnels(self) -> None:
-        """Remove background tunnels whose SSH process has exited and report why."""
+        """!
+        @brief Reap background tunnels whose ssh has exited and report why.
+
+        Called after mount and every 5 s by the interval timer.  Each dead
+        tunnel's exit status and stderr tail are collected into one
+        "Tunnel Closed" modal, then its log file is deleted.
+        """
         dead = self._tunnels.reap_dead()
         if not dead:
             return
@@ -1646,7 +1934,11 @@ class SSHSelector(App[AppResult]):
     # ------------------------------------------------------------------
 
     def _apply_column_highlight(self, item: "HostPairItem") -> None:
-        """Highlight only the active column within the pair row."""
+        """!
+        @brief Highlight only the active column within a pair row.
+
+        @param item  Row whose column `_column` should carry .col-selected.
+        """
         for i, col in enumerate(item.query(".host-col")):
             if i == self._column:
                 col.add_class("col-selected")
@@ -1655,6 +1947,14 @@ class SSHSelector(App[AppResult]):
 
     @on(ListView.Highlighted, "#list")
     def handle_highlighted(self, event: ListView.Highlighted) -> None:
+        """!
+        @brief Track the cursor row in the host list (up/down keys, mouse).
+
+        Resets the column to the left host of the new row.
+
+        @param event  Highlighted event; item is None when the list is
+                      empty, and GroupHeader rows are ignored.
+        """
         # Remove column highlight from any previously highlighted row
         for col in self.query(".host-col"):
             col.remove_class("col-selected")
@@ -1666,11 +1966,23 @@ class SSHSelector(App[AppResult]):
 
     @on(ListView.Selected, "#list")
     def handle_selected(self, event: ListView.Selected) -> None:
+        """!
+        @brief Connect when a host row is activated (Enter on the list, or click).
+
+        @param event  Selected event for the activated row.
+        """
+        # Prefer _selected_host so the right-hand column is honoured; the
+        # row's first host is only a fallback.
         if event.item and isinstance(event.item, HostPairItem):
             self._choose_and_exit(self._selected_host or event.item.hosts[0])
 
     def on_key(self, event) -> None:
-        """Left/right arrows switch the active column within a two-host row."""
+        """!
+        @brief Left/right arrow keys switch the active column within a pair row.
+
+        @param event  Textual Key event; stopped when consumed so the
+                      ListView / Input do not also act on it.
+        """
         if event.key not in ("left", "right"):
             return
         lv = self.query_one("#list", ListView)
@@ -1684,12 +1996,26 @@ class SSHSelector(App[AppResult]):
         event.stop()
 
     def on_tunnel_panel_kill_requested(self, event: TunnelPanel.KillRequested) -> None:
-        """Terminate a background tunnel when the user kills it from the panel."""
+        """!
+        @brief Terminate a background tunnel (k or Delete in the Tunnels panel).
+
+        @param event  Message carrying the ActiveTunnel to stop.
+        @note Stopping waits up to the _stop_processes() grace period
+              (SIGTERM then SIGKILL) on the event loop; the UI may pause
+              briefly for a stubborn ssh.
+        """
         self._tunnels.remove(event.tunnel, terminate=True)
         self._refresh_tunnel_panel()
 
     @on(Input.Changed, "#search-bar")
     def handle_search(self, event: Input.Changed) -> None:
+        """!
+        @brief Filter the host list on every edit of the search bar.
+
+        Case-insensitive substring match on nickname or hostname.
+
+        @param event  Input.Changed event from #search-bar.
+        """
         query = event.value.strip().lower()
         if query:
             self.filtered_hosts = [
@@ -1705,22 +2031,47 @@ class SSHSelector(App[AppResult]):
     # ------------------------------------------------------------------
 
     def action_connect(self) -> None:
+        """!
+        @brief Enter: open an interactive ssh session to the selected host.
+        """
         if self._selected_host:
             self._choose_and_exit(self._selected_host)
 
     def action_new_terminal(self) -> None:
+        """!
+        @brief n: open the selected host in a new terminal window.
+        """
         if self._selected_host:
             self._choose_new_terminal(self._selected_host)
 
     def action_tunnel(self) -> None:
+        """!
+        @brief t: start the port-forward flow for the selected host.
+        """
         if self._selected_host:
             self._choose_tunnel(self._selected_host)
 
     def action_about(self) -> None:
+        """!
+        @brief A: show the About modal.
+        """
         self.push_screen(AboutModal())
 
     def action_quit(self) -> None:
-        """Quit, asking first whether to stop any running background tunnels."""
+        """!
+        @brief q (or Esc from the list): quit, asking first about live
+               background tunnels.
+
+        QuitTunnelsModal offers stop (terminate all, then exit), keep (set
+        keep_on_exit so neither the atexit hook nor the SIGHUP/SIGTERM
+        handler kills them; main() prints their PIDs), or cancel.
+
+        @warning Choosing "keep" leaves orphaned ssh processes holding local
+                 ports after ssh-selector exits; they must be killed by PID.
+        @see _install_tunnel_shutdown(), _report_kept_tunnels()
+        """
+        # Pressing q again while the question is showing must not stack a
+        # second modal.
         if isinstance(self.screen, QuitTunnelsModal):
             return   # already asking
         live = self._tunnels.alive()
@@ -1729,6 +2080,10 @@ class SSHSelector(App[AppResult]):
             return
 
         def on_choice(choice: Optional[str]) -> None:
+            """!
+            @brief QuitTunnelsModal callback.
+            @param choice  "stop", "keep", or None for cancel (stay in the app).
+            """
             if choice == "stop":
                 self._tunnels.terminate_all()
                 self.exit(None)
@@ -1739,17 +2094,38 @@ class SSHSelector(App[AppResult]):
         self.push_screen(QuitTunnelsModal(live), on_choice)
 
     def action_check_users(self) -> None:
+        """!
+        @brief c / C: probe logged-in user counts on all hosts.
+
+        exclusive=False so a repeated press does not cancel probes already
+        in progress; duplicates are filtered by freshness and
+        `_checks_in_flight` instead.
+        """
         self.run_worker(self._check_all_user_counts(), exclusive=False)
 
     async def _check_all_user_counts(self) -> None:
-        """Count logged-in users on every host, at most check_concurrency at a time.
+        """!
+        @brief Count logged-in users on every host, at most check_concurrency at a time.
 
         Hosts with a fresh cached count or a probe already running are skipped,
         so pressing c again does not add a second wave of connections.
+
+        @warning Raising check_concurrency above the gateway's sshd
+                 MaxStartups start value (OpenSSH default 10) makes sshd
+                 drop connections at random; probes then report
+                 "unreachable" for hosts that are fine.
         """
+        # A new semaphore per wave: two overlapping waves can each run up to
+        # the limit, but _checks_in_flight prevents them probing the same
+        # host, and freshness skips most of the second wave.
         limit = asyncio.Semaphore(self._check_concurrency)
 
         async def _limited(host: Host) -> None:
+            """!
+            @brief Probe one host while holding a semaphore slot.
+            @param host  Host to probe.
+            """
+            # Checked before acquiring so cached hosts do not occupy a slot.
             if self._user_count_is_fresh(host.hostname):
                 return
             async with limit:
@@ -1758,13 +2134,29 @@ class SSHSelector(App[AppResult]):
         await asyncio.gather(*[_limited(h) for h in self.all_hosts])
 
     def _user_count_is_fresh(self, hostname: str) -> bool:
-        """Return True if a cached count exists and has not yet expired."""
+        """!
+        @brief Test whether a cached user count is younger than cache_lifetime.
+
+        Failed probes (count None) are cached too, so an unreachable host is
+        not hammered on every press within the lifetime.
+
+        @param hostname  Host key into `_user_counts`.
+        @return True if a cached count exists and has not yet expired.
+        """
         if hostname not in self._user_counts:
             return False
         _, fetched_at = self._user_counts[hostname]
         return (time.monotonic() - fetched_at) < self._cache_lifetime
 
     async def _check_user_count_one(self, host: Host) -> None:
+        """!
+        @brief Probe one host unless cached or already in flight, then cache
+               and display the result.
+
+        @param host  Host to probe.
+        """
+        # Re-checked after the semaphore wait: the count may have been
+        # filled by an overlapping wave while this task was queued.
         if self._user_count_is_fresh(host.hostname):
             return  # cached result still valid — nothing to do
         if host.hostname in self._checks_in_flight:
@@ -1778,10 +2170,27 @@ class SSHSelector(App[AppResult]):
         self._show_user_count(host.hostname, count)
 
     async def _probe_user_count(self, host: Host) -> Optional[int]:
-        """Run `ssh ... who` on *host*; return the line count or None on failure."""
+        """!
+        @brief Run `ssh ... who` on *host* and count its non-blank output lines.
+
+        Uses the host's first (default) user and the same proxy decision as
+        an interactive connect.
+
+        @param host  Host to probe.
+        @return Number of login sessions reported by who, or None if ssh
+                failed, authentication was refused, or the probe exceeded
+                CHECK_USERS_TIMEOUT.
+        @note Needs non-interactive auth (a valid Kerberos ticket for
+              GSSAPI, or an agent key).  With an expired ticket every host
+              shows "unreachable"; renew with r (kinit -R) or a fresh kinit.
+        """
         skip_proxy = self._should_skip_proxy(host)
         base = host.ssh_command(host.users[0], skip_proxy=skip_proxy)
         # Insert non-interactive options right after 'ssh'
+        # BatchMode=yes: never prompt (no TTY is available to a worker; a
+        # password prompt would hang until the timeout).  ConnectTimeout
+        # bounds only the TCP connect; the wait_for below bounds the whole
+        # probe including authentication and the proxy hop.
         cmd = (
             base[:1]
             + ["-o", "BatchMode=yes", "-o", "ConnectTimeout=5"]
@@ -1799,12 +2208,18 @@ class SSHSelector(App[AppResult]):
             stdout, _ = await asyncio.wait_for(proc.communicate(), timeout=CHECK_USERS_TIMEOUT)
             if proc.returncode != 0:
                 return None
+            # who prints one line per login session (tty/pts), so this is a
+            # session count, not a distinct-user count.
             lines = [l for l in stdout.decode().splitlines() if l.strip()]
             return len(lines)
         except Exception:
+            # Covers asyncio.TimeoutError, missing ssh binary, and decode
+            # errors: all mean "count unknown" to the operator.
             return None
         finally:
             # A timed-out probe must not keep holding a jump-host connection.
+            # (It would also keep counting against the gateway's MaxStartups
+            # after its semaphore slot is released.)
             if proc is not None and proc.returncode is None:
                 try:
                     proc.kill()
@@ -1813,6 +2228,12 @@ class SSHSelector(App[AppResult]):
                     pass
 
     def _show_user_count(self, hostname: str, count: Optional[int]) -> None:
+        """!
+        @brief Push a new user count into the list rows and detail panel.
+
+        @param hostname  Host whose count changed.
+        @param count     Session count, or None if the probe failed.
+        """
         # Update every list item that contains this host
         for item in self.query(HostPairItem):
             item.set_user_count(hostname, count)
@@ -1821,13 +2242,33 @@ class SSHSelector(App[AppResult]):
             self._update_detail(self._selected_host)
 
     def action_renew_kerberos(self) -> None:
+        """!
+        @brief r: renew the Kerberos TGT with `kinit -R`.
+
+        exclusive=True cancels a renewal already running, so repeated
+        presses cannot pile up kinit workers.
+        """
         self.run_worker(self._do_renew_kerberos(), exclusive=True)
 
     async def _do_renew_kerberos(self) -> None:
+        """!
+        @brief Run `kinit -R` and refresh the Kerberos panel afterwards.
+
+        Errors are deliberately swallowed: the panel refresh (klist) shows
+        the true ticket state, which is what the operator acts on.
+
+        @note kinit -R only extends a ticket that is still valid and
+              renewable (Fermilab tickets are normally issued renewable).
+              An expired ticket needs a full `kinit` in a shell; this TUI
+              has no TTY for a password prompt.
+        @note macOS ships Heimdal kinit; on Windows, MIT Kerberos for
+              Windows provides kinit.  If none is on PATH this is a no-op.
+        """
         panel = self.query_one(KerberosPanel)
         try:
             panel.query_one("#kerberos-content", Static).update("Renewing…")
         except Exception:
+            # Panel content not mounted; the refresh below still runs.
             pass
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -1841,9 +2282,18 @@ class SSHSelector(App[AppResult]):
         panel.refresh_tickets()
 
     def action_focus_search(self) -> None:
+        """!
+        @brief /: move keyboard focus to the search bar.
+        """
         self.query_one("#search-bar", Input).focus()
 
     def action_escape_search(self) -> None:
+        """!
+        @brief Esc: leave the search bar (clearing the filter), or quit when
+               the list already has focus.
+
+        Clearing the value fires Input.Changed, which restores the full list.
+        """
         search = self.query_one("#search-bar", Input)
         if search.has_focus:
             search.value = ""
