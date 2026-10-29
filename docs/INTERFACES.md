@@ -121,39 +121,45 @@ jump hosts):
 ## 4. `lan-scan` probe behaviour
 
 What it sends, per address of `ipaddress.IPv4Network(...).hosts()` (all
-addresses for /31 and /32; network and broadcast excluded otherwise):
+addresses for /31 and /32; network and broadcast excluded otherwise),
+generated lazily (`iter_addresses`):
 
-1. One ICMP echo by running the system `ping` (`:114-130`):
-   `ping -c 1 -W <timeout×1000>` on POSIX, `ping -n 1 -w <ms>` on Windows; the
-   subprocess is killed after `timeout + 1` s. Linux iputils reads `-W` in
-   seconds, so there the effective wait for a silent address is `timeout + 1` s;
-   macOS reads milliseconds (CLU-007).
+1. One ICMP echo by running the system `ping` (`ping_command`): Linux
+   `ping -c 1 -W <ceil(timeout) s, min 1>` (iputils reads seconds), macOS and
+   FreeBSD `ping -c 1 -W <timeout ms>`, Windows `ping -n 1 -w <timeout ms>`. The
+   subprocess is killed 0.5 s after the requested wait (CLU-007, #12).
 2. Only if the ping failed and ports are configured: a full TCP connect to each
    port in order, `timeout` s each, closed immediately; stops at the first
-   success (`:133-141`). No data is written.
-3. Only for responders, unless `--no-dns`: one `gethostbyaddr`. The
-   `socket.setdefaulttimeout(timeout)` around it (`:144-154`) does not bound the
-   resolver call and is process-global across threads.
+   success (`tcp_probe`). No data is written.
+3. Only for responders, unless `--no-dns`: one `gethostbyaddr` in its own
+   daemon thread, joined for at most `timeout` s; an overrun is reported as no
+   name. No process-global socket timeout is set (#12).
 
-Rate and concurrency: a `ThreadPoolExecutor(max_workers=workers)` (`:180-183`),
-default 64, so up to 64 `ping` processes at a time; no delay, no rate limit, no
-cap on network size, no confirmation. The address list is built in memory first
-(`:165`). With defaults on Linux a /24 of mostly silent addresses takes about
-8 s; with the shipped profiles' three fallback ports about 20 s; a /16 about
-35 minutes.
+Rate and concurrency: a `ThreadPoolExecutor(max_workers=workers)`, default 64,
+maximum 256, with at most `2*workers` futures outstanding, and a shared
+`RateLimiter` that starts at most `rate` addresses per second (default 50;
+0 disables). A /24 takes at least about 5 s at the defaults.
+
+Bounds: a network with more than `max_hosts` probe addresses (default 1024,
+so a /22 passes and a /21 does not) is refused with exit 3 unless
+`--allow-large` / `LAN_SCAN_ALLOW_LARGE` / `allow_large`. A globally routable
+network (`ipaddress.is_global`) is refused with exit 3 unless
+`--allow-routable` / `LAN_SCAN_ALLOW_ROUTABLE` / `allow_routable` (#8).
 
 Scope: the network from `-n`, `LAN_SCAN_NETWORK` or the file; otherwise the
-first non-loopback IPv4 network reported by `ip addr show` (else `ifconfig`,
-else `ipconfig`), with the others named on stderr (`:303-316`). On a
-multi-homed node or one with container bridges the first network need not be
-the DAQ subnet, and its size is not checked. Host bits in `-n` are accepted
-(`strict=False`).
+local interfaces from `ip addr show` (else `ifconfig`, else `ipconfig`), minus
+loopback and link-local, deduplicated and sorted by network. Exactly one
+candidate is scanned and named on stderr with its interface and address; more
+than one is listed on stderr and the run exits 1. An auto-detected network is
+subject to the same bounds. Host bits in `-n` are accepted (`strict=False`).
 
-Shipped profiles: `lan_scan-mu2edaq.yaml` → `131.225.245.0/24`, a routable
-Fermilab subnet (it contains `mu2egateway01.fnal.gov`, 131.225.245.6, resolved
-in this review); `lan_scan-mu2edaq-data.yaml` → `10.226.9.0/24`;
-`lan_scan-mu2edaq-ipmi.yaml` → `192.168.246.0/24`. All three add TCP 22, 80 and
-443 (CLU-003).
+Shipped profiles (in `config/lan-scan/`, out of `ssh-selector`'s `./config/*.yaml`
+discovery, #15 item 6): `lan_scan-mu2edaq.yaml` → `131.225.245.0/24`, a
+routable Fermilab subnet (it contains `mu2egateway01.fnal.gov`, 131.225.245.6),
+ICMP only, 16 workers, 20 addresses/s, refused unless `--allow-routable` is
+given (the file deliberately does not set it); `lan_scan-mu2edaq-data.yaml` →
+`10.226.9.0/24` and `lan_scan-mu2edaq-ipmi.yaml` → `192.168.246.0/24`, both
+with TCP 22, 80 and 443 fallback (CLU-003).
 
 ## 5. Client-side commands invoked
 
@@ -162,9 +168,9 @@ in this review); `lan_scan-mu2edaq-data.yaml` → `10.226.9.0/24`;
 | `ssh` | Enter, `n`, `t`, `c` | `ssh_selector.py:91-114`, `:1441-1470` |
 | `klist` | start-up and every 60 s | `:279-295`, `:306` |
 | `kinit -R` | `r` | `:1475-1490` |
-| `ip addr show`, `ifconfig` | start-up (both tools); `ipconfig` in `lan-scan` | `ssh_selector.py:326-367`, `lan_scan.py:37-107` |
+| `ip addr show`, `ifconfig` | start-up (both tools); `ipconfig` in `lan-scan` | `ssh_selector.py:326-367`, `lan_scan.py` (`detect_local_interfaces`) |
 | `osascript`, `gnome-terminal`, `xfce4-terminal`, `konsole`, `xterm`, `which` | `n` | `ssh_selector.py:1595-1620` |
-| `ping` | `lan-scan` | `lan_scan.py:114-130` |
+| `ping` | `lan-scan` | `lan_scan.py` (`ping_command`, `ping`) |
 
 ## 6. Review facts verified
 
@@ -173,6 +179,10 @@ in this review); `lan_scan-mu2edaq-data.yaml` → `10.226.9.0/24`;
   and `install.sh:30-33` read `ssh_selector.py`. `ssh-selector --version` and
   the package metadata say 1.0.1; `lan-scan --version` says 1.0.0. The package
   `__init__.py:3` re-exports `ssh_selector.__version__` (1.0.1).
+  Resolved (#11, #15 item 10): the version is now defined once in
+  `src/mu2edaq_cluster_tools/_version.py`; `__init__.py`, `ssh_selector.py`,
+  `lan_scan.py`, `pyproject.toml`, `bootstrap.sh` and `install.sh` all read it,
+  and importing `lan_scan` no longer loads Textual.
 - Committed `config/mu2e_daq.yaml`: Tracker 14 (`mu2e-trk-01..14`), Calorimeter
   8 (`mu2e-calo-01..08`); `Farm MC1` `proxy_jump: mu2egateway01.fnal.gov`
   (line 61). The working tree's uncommitted change (another session) sets

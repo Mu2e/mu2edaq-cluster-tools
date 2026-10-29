@@ -3,21 +3,21 @@ title: mu2edaq-cluster-tools
 group: network-arbitration
 tier: A
 audience: expert
-summary: Operator workstation tools for reaching DAQ nodes, a Textual SSH host picker (ssh-selector) driven by YAML topology files for Mu2e DAQ, Mu2e offline, NOvA DAQ and Fermilab GPVMs, plus lan-scan, an unthrottled ICMP and TCP-connect sweep of one IPv4 subnet
+summary: Operator workstation tools for reaching DAQ nodes, a Textual SSH host picker (ssh-selector) driven by YAML topology files for Mu2e DAQ, Mu2e offline, NOvA DAQ and Fermilab GPVMs, plus lan-scan, a rate-limited, size-bounded ICMP and TCP-connect sweep of one IPv4 subnet
 ---
 
 # mu2edaq-cluster-tools
 
 > Operator workstation tools for reaching DAQ nodes, a Textual SSH host picker
 > (`ssh-selector`) driven by YAML topology files for Mu2e DAQ, Mu2e offline,
-> NOvA DAQ and Fermilab GPVMs, plus `lan-scan`, an unthrottled ICMP and
+> NOvA DAQ and Fermilab GPVMs, plus `lan-scan`, a rate-limited, size-bounded ICMP and
 > TCP-connect sweep of one IPv4 subnet.
 
 | | |
 |---|---|
 | Repository | `Mu2e/mu2edaq-cluster-tools` (public, issues enabled; #4 open, #3 closed) |
 | Language | Python 3.9+ (Textual, PyYAML), shell installers |
-| Version | `ssh-selector` and package metadata 1.0.1 (`src/mu2edaq_cluster_tools/ssh_selector.py:4`, `pyproject.toml:51`); `lan-scan --version` 1.0.0 (`src/mu2edaq_cluster_tools/lan_scan.py:4`) |
+| Version | 1.0.1, single source `src/mu2edaq_cluster_tools/_version.py` (package metadata via `pyproject.toml:51`, `ssh-selector --version`, `lan-scan --version`, installers) |
 | Ports | binds none; `ssh` to each host's port (default 22); `lan-scan` sends ICMP echo and optional TCP connects (shipped profiles: 22, 80, 443) |
 | Depends on | no in-repo package; `ssh`, `klist`, `kinit`, `ping`, `ip`/`ifconfig`/`ipconfig` on the client |
 | Tests | 152 pytest cases in 7 modules (+ `conftest.py`, `__init__.py`); pass on Python 3.12.1 and 3.9.6 in this review |
@@ -56,7 +56,7 @@ flowchart LR
     UI -->|"every 60 s"| KL["klist"]
     UI -->|"r"| KI["kinit -R"]
     UI -->|"start-up"| DNS["gethostbyname per host"]
-    LS["lan-scan"] -->|"64 threads"| PING["ping -c 1 / TCP connect / gethostbyaddr"]
+    LS["lan-scan"] -->|"≤64 threads, ≤50 addr/s"| PING["ping -c 1 / TCP connect / gethostbyaddr"]
   end
   CMD --> GW["jump host<br/>mu2egateway01, mu2edaq-gateway,<br/>novadaq-*-gateway-01"]
   WHO --> GW
@@ -121,13 +121,18 @@ directory is consulted, and `install.sh` installs no topology (CLU-008).
 ### `lan-scan` (`src/mu2edaq_cluster_tools/lan_scan.py`)
 
 Precedence command line > `LAN_SCAN_*` environment > `--config` YAML > default
-(`:275-294`). Without a network it parses `ip addr show`, else `ifconfig`, else
-`ipconfig`, drops loopback, and scans the first network found (`:37-107`,
-`:303-316`). For every address of `network.hosts()`, materialised as a list
-(`:165`), a pool of `workers` threads (default 64, `:24`) runs one system
-`ping` (`:114-130`), then if it failed a TCP connect to each configured port in
-turn (`:133-141`), then for responders `gethostbyaddr` (`:144-154`). Scope and
-safety are in [INTERFACES.md §4](INTERFACES.md#4-lan-scan-probe-behaviour).
+(`resolve_option`). Without a network it parses `ip addr show`, else
+`ifconfig`, else `ipconfig` (with interface names), drops loopback and
+link-local, dedupes and sorts by network; it scans only if exactly one network
+remains and names it on stderr, otherwise lists the candidates and exits 1.
+Networks with more than `max_hosts` (1024) probe addresses, or globally
+routable ones, are refused (exit 3) without `--allow-large` /
+`--allow-routable`. Addresses are generated lazily; a pool of `workers`
+threads (default 64, max 256) paced by a shared `RateLimiter` (default 50
+addresses/s) runs one system `ping` with the platform's `-W`/`-w` unit, then if
+it failed a TCP connect to each configured port in turn, then for responders
+`gethostbyaddr` in a daemon thread joined with the timeout. Scope and safety
+are in [INTERFACES.md §4](INTERFACES.md#4-lan-scan-probe-behaviour).
 
 ### Installers
 
@@ -142,15 +147,15 @@ directory (editable with `--dev`). `install.sh` installs into
 Summarised; details in [INTERFACES.md](INTERFACES.md).
 
 - `ssh-selector [-c FILE] | --version`; exit 0, 1 (config problems), 2 (usage).
-- `lan-scan [-n CIDR] [-c FILE] [-t S] [-w N] [-p PORTS] [--no-dns] [--json] | --version`;
-  exit 0, 1, 2.
+- `lan-scan [-n CIDR] [-c FILE] [-t S] [-w N] [-r RATE] [--max-hosts N] [--allow-large] [--allow-routable] [-p PORTS] [--no-dns] [--json] | --version`;
+  exit 0, 1, 2, 3 (refused: too large or routable).
 - Topology YAML schema (`settings.md`, `config/hosts.yaml.example`).
 - Outbound: `ssh` (TCP 22 or host port, via jump hosts), ICMP echo, TCP
   connect, DNS.
 
 ## Configuration
 
-Ten files under `config/`:
+Six files under `config/` and four under `config/lan-scan/`:
 
 | File | Kind | Hosts | Jump hosts used |
 |---|---|---|---|
@@ -159,10 +164,10 @@ Ten files under `config/`:
 | `mu2e_offline.yaml` | ssh-selector | 22 in 5 groups | none (11), `mu2edaq-gateway` (7), `mu2egateway01` (4) |
 | `fnal_gpmv.yaml` | ssh-selector (Fermilab GPVMs) | 35 in 3 groups | none |
 | `example.yaml`, `hosts.yaml.example` | ssh-selector examples | 7 each | `gateway.example.com` |
-| `lan_scan-mu2edaq.yaml` | lan-scan | `131.225.245.0/24`, ports 22/80/443 | — |
-| `lan_scan-mu2edaq-data.yaml` | lan-scan | `10.226.9.0/24`, ports 22/80/443 | — |
-| `lan_scan-mu2edaq-ipmi.yaml` | lan-scan | `192.168.246.0/24`, ports 22/80/443 | — |
-| `lan_scan.yaml.example` | lan-scan example | `192.168.1.0/24` | — |
+| `lan-scan/lan_scan-mu2edaq.yaml` | lan-scan | `131.225.245.0/24` (routable; needs `--allow-routable`), ICMP only, 16 workers, 20/s | — |
+| `lan-scan/lan_scan-mu2edaq-data.yaml` | lan-scan | `10.226.9.0/24`, ports 22/80/443 | — |
+| `lan-scan/lan_scan-mu2edaq-ipmi.yaml` | lan-scan | `192.168.246.0/24`, ports 22/80/443 | — |
+| `lan-scan/lan_scan.yaml.example` | lan-scan example | `192.168.1.0/24` | — |
 
 Counts are from `load_config()` on the committed files.
 
@@ -216,7 +221,7 @@ No service. Typical use:
 ```bash
 ./bootstrap.sh --dev && source venv/bin/activate
 ssh-selector -c config/mu2e_daq.yaml
-lan-scan -c config/lan_scan-mu2edaq-data.yaml -w 16 --json
+lan-scan -c config/lan-scan/lan_scan-mu2edaq-data.yaml -w 16 --json
 ```
 
 or `./install.sh` for per-user launchers (then `ssh-selector -c <checkout>/config/mu2e_daq.yaml`).

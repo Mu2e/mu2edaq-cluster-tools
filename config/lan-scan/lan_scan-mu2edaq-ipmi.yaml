@@ -1,18 +1,15 @@
-# lan-scan — example configuration
+# lan-scan - Mu2e DAQ IPMI network (private, 192.168.246.0/24)
 #
-# All keys are optional; commandline flags and environment variables
-# (LAN_SCAN_NETWORK, LAN_SCAN_TIMEOUT, LAN_SCAN_WORKERS, LAN_SCAN_PORTS)
-# override the values below. Priority: commandline > environment > this file > built-in default.
+# Use with: lan-scan -c config/lan-scan/lan_scan-mu2edaq-ipmi.yaml
 #
-# network — CIDR to scan when --network is not given (default: auto-detect)
-# timeout — per-host probe timeout in seconds (default: 1.0)
-# workers — number of concurrent probe threads (default: 64)
-# ports   — TCP ports to try if a host filters ICMP ping (default: none)
-# no_dns  — set true to skip reverse DNS lookups (default: false)
+# Keys, environment overrides and precedence are documented in
+# config/lan-scan/lan_scan.yaml.example and lan-scan(1).
+# Priority: commandline > environment > this file > built-in default.
 
 network: 192.168.246.0/24
 timeout: 1.0
 workers: 64
+rate: 50
 ports:
   - 22
   - 80

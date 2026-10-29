@@ -1,20 +1,23 @@
-# lan-scan — example configuration
+# lan-scan - Mu2e DAQ public subnet (SITE-ROUTABLE, 131.225.245.0/24)
 #
-# All keys are optional; commandline flags and environment variables
-# (LAN_SCAN_NETWORK, LAN_SCAN_TIMEOUT, LAN_SCAN_WORKERS, LAN_SCAN_PORTS)
-# override the values below. Priority: commandline > environment > this file > built-in default.
+# Use with: lan-scan -c config/lan-scan/lan_scan-mu2edaq.yaml --allow-routable
 #
-# network — CIDR to scan when --network is not given (default: auto-detect)
-# timeout — per-host probe timeout in seconds (default: 1.0)
-# workers — number of concurrent probe threads (default: 64)
-# ports   — TCP ports to try if a host filters ICMP ping (default: none)
-# no_dns  — set true to skip reverse DNS lookups (default: false)
+# SITE-ROUTABLE PROFILE. 131.225.245.0/24 is globally routable Fermilab
+# address space (it contains mu2egateway01.fnal.gov). A sweep of it can look
+# like reconnaissance to the site's network monitoring, so lan-scan refuses
+# it unless --allow-routable (or LAN_SCAN_ALLOW_ROUTABLE=1) is given. This
+# file deliberately does not set allow_routable: the decision is made per
+# run. Only run it if you are authorised to scan this subnet.
+#
+# The profile is ICMP only (no TCP fallback ports) and uses reduced
+# concurrency and rate to keep the probe footprint small.
+#
+# Keys, environment overrides and precedence are documented in
+# config/lan-scan/lan_scan.yaml.example and lan-scan(1).
+# Priority: commandline > environment > this file > built-in default.
 
 network: 131.225.245.0/24
 timeout: 1.0
-workers: 64
-ports:
-  - 22
-  - 80
-  - 443
+workers: 16
+rate: 20
 no_dns: false

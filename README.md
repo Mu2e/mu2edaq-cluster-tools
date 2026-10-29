@@ -255,11 +255,20 @@ Press `r` to renew the ticket principal via `kinit -R`. Tickets refresh automati
 `lan-scan` is a standalone companion utility (installed alongside `ssh-selector`) that probes the local network and reports which hosts respond, with their DNS name and IP address:
 
 ```bash
-lan-scan                              # auto-detect the local subnet and scan it
+lan-scan                              # auto-detect the local subnet (only if there is exactly one)
 lan-scan --network 192.168.1.0/24     # scan a specific subnet
-lan-scan --ports 22,80,443            # also try these TCP ports for hosts that filter ICMP ping
-lan-scan --no-dns --json              # skip reverse DNS, emit JSON instead of a table
+lan-scan -n 10.226.9.0/24 --ports 22,80,443   # also try these TCP ports for hosts that filter ICMP ping
+lan-scan -n 10.226.9.0/24 --no-dns --json     # skip reverse DNS, emit JSON instead of a table
+lan-scan -c config/lan-scan/lan_scan-mu2edaq-data.yaml -w 16 -r 10   # shipped profile, gentler pacing
 ```
+
+Safety limits (these run on production DAQ networks):
+
+- **Size:** networks with more than `--max-hosts` probe addresses (default 1024, i.e. a /22) are refused (exit 3) unless `--allow-large` is given, so a `/16` typo does not turn into a 65534-address sweep.
+- **Routable space:** globally routable networks (not RFC 1918 or other private/reserved space) are refused (exit 3) unless `--allow-routable` is given. The shipped `config/lan-scan/lan_scan-mu2edaq.yaml` targets the routable Fermilab subnet `131.225.245.0/24`, so it needs `--allow-routable` on every run; it is ICMP only, with 16 workers at 20 addresses/s.
+- **Pacing:** at most `--workers` probes in flight (default 64, max 256) and at most `--rate` addresses started per second (default 50; `0` = unlimited).
+- **Auto-detect:** loopback and link-local networks are ignored; if more than one network remains, `lan-scan` lists them (with interface names) and exits 1 instead of picking one. The network it does pick is named on stderr with its interface.
+- **Timeouts:** `--timeout` bounds the ping (Linux `ping -W` in whole seconds, rounded up; macOS `-W` and Windows `-w` in milliseconds), each TCP connect, and each reverse-DNS lookup (run in its own thread).
 
 Example output:
 
@@ -272,7 +281,7 @@ IP Address     DNS Name
 2 host(s) found.
 ```
 
-Defaults (network, timeout, worker count, fallback ports) can be set in a YAML file passed via `--config` — see `config/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, and `LAN_SCAN_PORTS` environment variables. See `man/man1/lan-scan.1` (`man ./man/man1/lan-scan.1`) for full option details.
+Defaults (network, timeout, workers, rate, max_hosts, allow_large, allow_routable, fallback ports, no_dns) can be set in a YAML file passed via `--config` — see `config/lan-scan/lan_scan.yaml.example` — and overridden by the `LAN_SCAN_NETWORK`, `LAN_SCAN_TIMEOUT`, `LAN_SCAN_WORKERS`, `LAN_SCAN_RATE`, `LAN_SCAN_MAX_HOSTS`, `LAN_SCAN_ALLOW_LARGE`, `LAN_SCAN_ALLOW_ROUTABLE`, `LAN_SCAN_PORTS` and `LAN_SCAN_NO_DNS` environment variables; commandline options override both (commandline > environment > config file > default). lan-scan profiles live in `config/lan-scan/` so that `ssh-selector`, which offers every `*.yaml` in `./` and `./config/`, does not list them as host files. `lan-scan --version` and `ssh-selector --version` both report the single package version in `src/mu2edaq_cluster_tools/_version.py`. See `man/man1/lan-scan.1` (`man ./man/man1/lan-scan.1`) for full option details.
 
 ## Other Stuff
 
