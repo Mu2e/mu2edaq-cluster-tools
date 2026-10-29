@@ -1937,7 +1937,7 @@ class ConfigItem(ListItem):
         self.path = path
 
     def compose(self) -> ComposeResult:
-        yield Label(str(path))
+        yield Label(str(self.path))
 
 
 class ConfigSelectApp(App[Optional[Path]]):
