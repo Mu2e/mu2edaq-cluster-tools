@@ -128,6 +128,10 @@ ssh-selector
 # Specify a config file explicitly
 ssh-selector -c path/to/hosts.yaml
 
+# Limit "Check Users" to 4 simultaneous ssh connections (default 8; also
+# settable as SSH_SELECTOR_CHECK_CONCURRENCY or check_concurrency in the YAML)
+ssh-selector -c path/to/hosts.yaml --check-concurrency 4
+
 # Print the version
 ssh-selector --version
 ```
@@ -238,7 +242,9 @@ Press `t` on any host to open a port-forward tunnel instead of a shell. You will
 - **Local port** — port on your machine to listen on
 - **Remote port** — port on the destination host to forward to
 
-The resulting command is `ssh -N -L <local>:localhost:<remote> [options] <host>`. Press `Ctrl+C` in the terminal to close the tunnel and return to the host selector.
+The resulting command is `ssh -N -o ExitOnForwardFailure=yes -L <local>:localhost:<remote> [options] <host>`. Press `Ctrl+C` in the terminal to close the tunnel and return to the host selector.
+
+If the local port is already forwarded by one of your background tunnels, or anything else is listening on it, the tunnel is not started and a dialog says so. Background tunnels stay in the Tunnels panel across later connections until you kill them (`k`) or quit; on `q` with tunnels running you are asked whether to stop them (`s`) or leave them running (`k`, PIDs are printed). A background tunnel that exits is removed from the panel and its `ssh` error output is shown.
 
 ## Kerberos support
 

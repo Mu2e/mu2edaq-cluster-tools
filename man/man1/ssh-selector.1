@@ -5,6 +5,8 @@ ssh\-selector \- terminal UI for picking and connecting to SSH hosts
 .B ssh\-selector
 .RB [ \-c
 .IR FILE ]
+.RB [ \-\-check\-concurrency
+.IR N ]
 .br
 .B ssh\-selector
 .BR \-\-version | \-h
@@ -29,7 +31,9 @@ command for its first user, the output of
 .BR klist (1)
 refreshed every 60 s with expiry colouring (green over 2 h, yellow under,
 red expired), the local hostname, IP and IPv4 subnets, and the background
-tunnels started in this session.
+tunnels started since
+.B ssh\-selector
+was launched (they stay listed across connections).
 .PP
 At start-up every hostname is resolved with
 .BR gethostbyname (3);
@@ -49,6 +53,17 @@ it exits non-zero, so its warnings are not visible while the session runs.
 .BR \-c ", " \-\-config " \fIFILE\fR"
 YAML host file.
 Skips discovery.
+.TP
+.BI \-\-check\-concurrency " N"
+Maximum number of
+.B ssh
+processes "Check Users" runs at once (a positive integer).
+Overrides
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+and the
+.B check_concurrency
+config key.
+Default 8.
 .TP
 .B \-\-version
 Print
@@ -121,6 +136,14 @@ Default 600.
 .B panel_width
 Width of the right-hand panel in columns.
 Default 50.
+.TP
+.B check_concurrency
+Maximum simultaneous "Check Users" connections.
+Default 8.
+Overridden by
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+and
+.BR \-\-check\-concurrency .
 .PP
 The user
 .B default
@@ -137,7 +160,7 @@ The resulting commands are
 .RS
 .nf
 ssh [\-p PORT] [\-J JUMPUSER@JUMPHOST] \-l USER HOST
-ssh \-N \-L LOCAL:localhost:REMOTE [\-p PORT] [\-J ...] \-l USER HOST
+ssh \-N \-o ExitOnForwardFailure=yes \-L LOCAL:localhost:REMOTE [\-p PORT] [\-J ...] \-l USER HOST
 .fi
 .RE
 .PP
@@ -167,24 +190,47 @@ The host list is then rebuilt, as after a foreground session.
 Port-forward tunnel.
 Prompts for a local and a remote port (1\-65535) and a background switch
 (default on).
+Before starting, the local port is checked: if a background tunnel of this
+session already forwards it, or anything else is listening on 127.0.0.1 or ::1
+at that port, the tunnel is not started and a dialog says why.
 In the background the tunnel is a child
 .B ssh \-N
-process listed in the Tunnels panel; in the foreground the UI exits, the
-tunnel runs until Ctrl-C, and the UI comes back.
+process in its own session (so Ctrl-C in a later foreground session does not
+reach it), listed in the Tunnels panel for the life of the
+.B ssh\-selector
+process, including after Enter, n or a foreground t rebuild the UI.
+Its standard error goes to a temporary log file; if the tunnel exits (for
+example a forward that cannot be bound, which
+.B ExitOnForwardFailure=yes
+turns into an exit), it is removed from the panel and a dialog shows its exit
+status and the end of that log.
+In the foreground the UI exits, the tunnel runs until Ctrl-C, and the UI
+comes back.
 .TP
 .B c
 "Check Users": runs
 .B ssh \-o BatchMode=yes \-o ConnectTimeout=5 ... who
 against
 .I every
-host in the file at once, as each host's first user and through its jump host,
+host in the file, as each host's first user and through its jump host,
 and shows the number of lines
 .B who
-prints (12 s limit per host).
+prints.
+At most
+.B check_concurrency
+(default 8, below OpenSSH's default
+.B MaxStartups
+of 10) connections run at once; the rest wait.
+Each probe has a 12 s limit, after which its
+.B ssh
+is killed and the host is shown as unreachable; a non-zero
+.B ssh
+exit is also shown as unreachable.
 Results are reused for
 .B cache_lifetime
-seconds.
-There is no limit on concurrent connections.
+seconds, and pressing
+.B c
+again while a check is running does not start a second probe of the same host.
 .TP
 .B /
 Focus the filter field.
@@ -199,6 +245,17 @@ About screen.
 .TP
 .B q
 Quit.
+If background tunnels are running, a dialog lists them and asks:
+.B s
+(or
+.BR y )
+stops them and quits,
+.B k
+leaves them running and quits (their PIDs and log files are printed),
+.B Escape
+(or
+.BR n )
+returns to the host list.
 .TP
 .B Left\fR, \fBRight
 Move between the two hosts of a row.
@@ -233,6 +290,17 @@ Login name used for the
 user (falls back to
 .BR getpass.getuser ()).
 .TP
+.B SSH_SELECTOR_CHECK_CONCURRENCY
+Maximum simultaneous "Check Users" connections; overrides the
+.B check_concurrency
+config key and is overridden by
+.BR \-\-check\-concurrency .
+.TP
+.B TMPDIR
+Directory for the background tunnels' standard-error logs
+.RI ( ssh\-selector\-tunnel\-PORT\-*.log ),
+deleted when the tunnel is stopped or reported.
+.TP
 .B KRB5CCNAME
 Not read directly; honoured by
 .BR klist ,
@@ -247,7 +315,9 @@ Quit from the host list or the config picker.
 .B 1
 No config file found, the
 .B \-c
-file does not exist, the file fails to load, or it defines no hosts.
+file does not exist, the file fails to load, it defines no hosts, or the
+check concurrency from the command line, environment or file is not a positive
+integer.
 .TP
 .B 2
 Invalid command line.
@@ -255,17 +325,16 @@ Invalid command line.
 .RS
 .nf
 ssh\-selector \-c config/mu2e_daq.yaml
+ssh\-selector \-c config/nova_daq.yaml \-\-check\-concurrency 4
+SSH_SELECTOR_CHECK_CONCURRENCY=2 ssh\-selector
 cd ~/clusters && ssh\-selector        # pick among ./*.yaml
 .fi
 .RE
 .SH BUGS
-Background tunnels belong to one run of the UI.
-After Enter, n or a foreground t the UI is rebuilt with an empty Tunnels panel,
-and on quit the tunnels keep running; neither case stops them.
-They are started without
-.BR "ExitOnForwardFailure=yes" ,
-so a new tunnel whose local port is still held by an old one stays up,
-forwards nothing, and is listed as alive.
+Background tunnels are stopped when
+.B ssh\-selector
+exits normally or receives SIGHUP or SIGTERM, unless the user chose to keep
+them at quit; a SIGKILL leaves them running.
 .PP
 .B xfce4\-terminal \-e
 expects one string but is given the command as separate words.
