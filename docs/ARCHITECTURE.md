@@ -88,7 +88,10 @@ ssh -N -L LOCAL:localhost:REMOTE [-p PORT] [-J JUMPUSER@JUMP] -l USER HOST
 ```
 
 Arguments are passed as a list (no shell). For a new terminal on macOS the list
-is `shlex.quote`d and embedded in AppleScript (`:1595-1603`).
+is `shlex.quote`d and embedded in AppleScript; on Linux the argv follows the
+emulator's argv flag (`gnome-terminal --`, `xfce4-terminal -x`, `konsole -e`,
+`xterm -e`), found with `shutil.which`; on Windows it runs in a new console
+(`_open_in_new_terminal`).
 
 ### TUI (`SSHSelector`, `ssh_selector.py:869-1505`)
 
@@ -96,9 +99,9 @@ is `shlex.quote`d and embedded in AppleScript (`:1595-1603`).
   local IPv4 subnets (`:326-370`). A host whose address is inside a local subnet
   skips its jump (`_should_skip_proxy`, `:1183-1194`).
 - **Enter / n / t** exit the Textual app with a `ConnectionRequest`; `main()`
-  runs the command and then builds a new `SSHSelector` (`:1675-1716`). An
-  interactive session runs with `ssh`'s stderr captured (`:1711`) and shown in a
-  dialog on a non-zero exit.
+  runs the command and then builds a new `SSHSelector`. An interactive session
+  forwards `ssh`'s stderr live to the terminal and keeps its last 8 KiB, shown in
+  a dialog only when `ssh` exits 255 (`_run_foreground_ssh`).
 - **Background tunnels** are `subprocess.Popen` children with stderr piped and
   never read (`:1322`), polled every 5 s (`:1094`), killed with SIGTERM from the
   panel (`:1392`). Because each loop iteration constructs a new app, the list is
@@ -157,7 +160,7 @@ Ten files under `config/`:
 | `mu2e_daq.yaml` | ssh-selector | 75 in 13 groups | `mu2egateway01.fnal.gov` (62), `mu2edaq-gateway.fnal.gov` (7), none (6) |
 | `nova_daq.yaml` | ssh-selector | 222 in 7 groups | `novadaq-far-gateway-01` (207), `novadaq-near-gateway-01` (9), `mu2egateway01` (4), none (2) |
 | `mu2e_offline.yaml` | ssh-selector | 22 in 5 groups | none (11), `mu2edaq-gateway` (7), `mu2egateway01` (4) |
-| `fnal_gpmv.yaml` | ssh-selector (Fermilab GPVMs) | 35 in 3 groups | none |
+| `fnal_gpvm.yaml` | ssh-selector (Fermilab GPVMs) | 35 in 3 groups | none |
 | `example.yaml`, `hosts.yaml.example` | ssh-selector examples | 7 each | `gateway.example.com` |
 | `lan_scan-mu2edaq.yaml` | lan-scan | `131.225.245.0/24`, ports 22/80/443 | — |
 | `lan_scan-mu2edaq-data.yaml` | lan-scan | `10.226.9.0/24`, ports 22/80/443 | — |

@@ -14,6 +14,8 @@ import subprocess
 import argparse
 import getpass
 import shlex
+import shutil
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -1592,6 +1594,30 @@ class ConfigSelectApp(App[Optional[Path]]):
 # Entry point
 # ---------------------------------------------------------------------------
 
+# Terminal emulators tried on Linux/BSD, in preference order.  Each prefix
+# must take the *remaining argv* as the command (not a single shell string):
+# gnome-terminal "--", xfce4-terminal "-x" ("-e" takes one string),
+# konsole "-e" and xterm "-e" (both consume all following arguments).
+_TERMINAL_CANDIDATES = (
+    ("gnome-terminal", "--"),
+    ("xfce4-terminal", "-x"),
+    ("konsole", "-e"),
+    ("xterm", "-e"),
+)
+
+
+def _terminal_command(cmd: list[str]) -> Optional[list[str]]:
+    """Return the argv that runs *cmd* in a new terminal on Linux/BSD, or None.
+
+    Uses shutil.which (no external ``which`` program) to find the first
+    installed emulator in _TERMINAL_CANDIDATES.
+    """
+    for prefix in _TERMINAL_CANDIDATES:
+        if shutil.which(prefix[0]):
+            return list(prefix) + list(cmd)
+    return None
+
+
 def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
     """Launch *cmd* in a new terminal window, returning immediately."""
     if sys.platform == "darwin":
@@ -1602,20 +1628,65 @@ def _open_in_new_terminal(cmd: list[str], title: str = "") -> None:
         subprocess.Popen(["osascript", "-e", script])
         return
 
-    # Linux: try common terminal emulators in preference order.
-    candidates = [
-        ["gnome-terminal", "--"],
-        ["xfce4-terminal", "-e"],
-        ["konsole", "-e"],
-        ["xterm", "-e"],
-    ]
-    for prefix in candidates:
-        exe = prefix[0]
-        if subprocess.run(["which", exe], capture_output=True).returncode == 0:
-            subprocess.Popen(prefix + cmd)
-            return
+    if sys.platform == "win32":
+        # A new console window running ssh.exe directly; no shell involved.
+        subprocess.Popen(cmd, creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0))
+        return
+
+    # Linux/BSD: first installed terminal emulator.
+    term_cmd = _terminal_command(cmd)
+    if term_cmd is not None:
+        subprocess.Popen(term_cmd)
+        return
 
     print(f"Warning: no supported terminal emulator found. Run manually:\n  {' '.join(cmd)}")
+
+
+# ssh exits with 255 when ssh itself fails (resolution, connect, auth, proxy
+# jump); any other status is the remote command's / login shell's own.
+SSH_ERROR_STATUS = 255
+# Bytes of ssh's stderr kept for the error dialog.
+_STDERR_TAIL_BYTES = 8192
+
+
+def _run_foreground_ssh(cmd: list[str]) -> tuple[int, str]:
+    """Run an interactive *cmd* in the foreground and return (status, error).
+
+    ssh's stderr is forwarded to the terminal as it is produced (warnings,
+    banners and host-key messages are seen live), while the last
+    _STDERR_TAIL_BYTES are kept.  *error* is that tail when ssh exits with
+    SSH_ERROR_STATUS, otherwise "", so a remote shell whose last command
+    failed does not raise the "SSH Connection Failed" dialog.  Prompts
+    (passwords, host-key confirmation) use /dev/tty and are unaffected.
+    """
+    proc = subprocess.Popen(cmd, stderr=subprocess.PIPE)
+    tail = bytearray()
+    out = getattr(sys.stderr, "buffer", None)
+
+    def _pump() -> None:
+        fd = proc.stderr.fileno()
+        while True:
+            chunk = os.read(fd, 4096)
+            if not chunk:
+                break
+            if out is not None:
+                out.write(chunk)
+                out.flush()
+            else:
+                sys.stderr.write(chunk.decode(errors="replace"))
+                sys.stderr.flush()
+            tail.extend(chunk)
+            if len(tail) > _STDERR_TAIL_BYTES:
+                del tail[:-_STDERR_TAIL_BYTES]
+
+    pump = threading.Thread(target=_pump, daemon=True)
+    pump.start()
+    status = proc.wait()
+    pump.join()
+    proc.stderr.close()
+    if status == SSH_ERROR_STATUS:
+        return status, tail.decode(errors="replace").strip()
+    return status, ""
 
 
 # ---------------------------------------------------------------------------
@@ -1708,11 +1779,7 @@ Config file search order (when -c is not given):
         else:
             cmd = host.ssh_command(user_entry, skip_proxy=skip_proxy)
             print(f"Connecting: {' '.join(cmd)}")
-            proc = subprocess.run(cmd, stderr=subprocess.PIPE)
-            if proc.returncode != 0 and proc.stderr:
-                ssh_error = proc.stderr.decode(errors="replace").strip()
-            else:
-                ssh_error = ""
+            _, ssh_error = _run_foreground_ssh(cmd)
         # Session/tunnel ended — loop back to the selection screen
 
 

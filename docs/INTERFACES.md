@@ -105,7 +105,7 @@ is `localhost` on the destination host. No `ExitOnForwardFailure`, no
 `ControlMaster`, no `-t`.
 
 Process handling (`:1675-1716`, `:1316-1334`): shell sessions run in the
-foreground with stderr captured; foreground tunnels run until Ctrl-C; background
+foreground with stderr forwarded live (tail shown in a dialog on ssh exit 255); foreground tunnels run until Ctrl-C; background
 tunnels are `Popen` children with stderr piped and never read; "check users"
 runs every host's `ssh` concurrently with a 12 s limit each (`:1430-1470`).
 
@@ -163,7 +163,7 @@ in this review); `lan_scan-mu2edaq-data.yaml` → `10.226.9.0/24`;
 | `klist` | start-up and every 60 s | `:279-295`, `:306` |
 | `kinit -R` | `r` | `:1475-1490` |
 | `ip addr show`, `ifconfig` | start-up (both tools); `ipconfig` in `lan-scan` | `ssh_selector.py:326-367`, `lan_scan.py:37-107` |
-| `osascript`, `gnome-terminal`, `xfce4-terminal`, `konsole`, `xterm`, `which` | `n` | `ssh_selector.py:1595-1620` |
+| `osascript`, `gnome-terminal`, `xfce4-terminal`, `konsole`, `xterm` (found via `shutil.which`) | `n` | `ssh_selector._open_in_new_terminal` |
 | `ping` | `lan-scan` | `lan_scan.py:114-130` |
 
 ## 6. Review facts verified
