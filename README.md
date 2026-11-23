@@ -94,6 +94,19 @@ This will:
   `ssh-selector` finds them from any directory
 - Install `ssh-selector` and `lan-scan` launchers in `~/.local/bin/` (or
   `~/bin/` if that exists and `~/.local/bin` does not)
+- Install three shortcut commands next to them, each opening `ssh-selector`
+  on one cluster (extra arguments are passed through; a later `-c` wins):
+
+  | Command   | Equivalent to                                  |
+  |-----------|------------------------------------------------|
+  | `mu2essh` | `ssh-selector -c <install dir>/config/mu2e_daq.yaml`  |
+  | `novassh` | `ssh-selector -c <install dir>/config/nova_daq.yaml`  |
+  | `fnalssh` | `ssh-selector -c <install dir>/config/fnal_gpvm.yaml` |
+
+  These are small executables rather than shell aliases, so they work in any
+  shell and are removed by `--uninstall`. If one of the names is already
+  taken by a file the installer did not write, that shortcut is skipped
+  with a warning.
 - Record everything it created in a manifest,
   `~/.local/share/mu2edaq-cluster-tools/.mu2edaq-cluster-tools-install`
 

@@ -1,4 +1,4 @@
-.TH INSTALL.SH 1 "2026-10-29" "mu2edaq-cluster-tools 1.0.1" "Mu2e DAQ Manual"
+.TH INSTALL.SH 1 "2026-11-22" "mu2edaq-cluster-tools 1.1.0" "Mu2e DAQ Manual"
 .SH NAME
 install.sh \- per-user install of ssh\-selector and lan\-scan with launchers
 .SH SYNOPSIS
@@ -47,6 +47,35 @@ and
 into the bin directory.
 .B lan\-scan
 profiles are not installed as host files.
+.PP
+Three shortcut launchers are also written to the bin directory.
+Each runs
+.B ssh\-selector \-c
+on one installed topology file and passes its own arguments through
+(a later
+.B \-c
+given by the operator takes precedence):
+.RS
+.TP 10
+.B mu2essh
+.I DIR/config/mu2e_daq.yaml
+.TP
+.B novassh
+.I DIR/config/nova_daq.yaml
+.TP
+.B fnalssh
+.I DIR/config/fnal_gpvm.yaml
+.RE
+.PP
+They are executables, not shell aliases, so they work in every shell and
+are listed in the manifest for
+.BR \-\-uninstall .
+A shortcut whose path is already taken by a file this script did not
+write for the same
+.I DIR
+(or whose name equals
+.BR \-\-app\-cmd )
+is skipped with a warning; the install continues.
 .PP
 The installed
 .BR ssh\-selector (1)
@@ -225,6 +254,12 @@ Annotated example.
 Launchers that
 .B exec
 the venv's entry points.
+.TP
+.IR BIN/mu2essh ", " BIN/novassh ", " BIN/fnalssh
+Shortcut launchers that
+.B exec
+.B ssh\-selector \-c
+.IR DIR/config/ { mu2e_daq , nova_daq , fnal_gpvm }.yaml.
 .SH EXIT STATUS
 .TP
 .B 0
@@ -245,6 +280,9 @@ Unknown option or missing option argument.
 .nf
 \&./install.sh
 ssh\-selector                         # finds DIR/config/*.yaml
+mu2essh                              # Mu2e DAQ cluster directly
+novassh                              # NOvA DAQ cluster directly
+fnalssh                              # Fermilab GPVMs directly
 \&./install.sh \-\-prefix /opt/mu2e/cluster\-tools \-\-bin\-dir /opt/mu2e/bin
 \&./install.sh \-\-uninstall \-\-prefix /opt/mu2e/cluster\-tools
 MU2EDAQ_CLUSTER_TOOLS_INSTALL_DIR=/tmp/ct ./install.sh \-\-bin\-dir /tmp/ct\-bin

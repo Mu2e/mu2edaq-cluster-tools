@@ -17,7 +17,7 @@ summary: Operator workstation tools for reaching DAQ nodes, a Textual SSH host p
 |---|---|
 | Repository | `Mu2e/mu2edaq-cluster-tools` (public, issues enabled; #4 open, #3 closed) |
 | Language | Python 3.9+ (Textual, PyYAML), shell installers |
-| Version | 1.0.1, single source `src/mu2edaq_cluster_tools/_version.py` (package metadata via `pyproject.toml:51`, `ssh-selector --version`, `lan-scan --version`, installers) |
+| Version | 1.1.0, single source `src/mu2edaq_cluster_tools/_version.py` (package metadata via `pyproject.toml:51`, `ssh-selector --version`, `lan-scan --version`, installers) |
 | Ports | binds none; `ssh` to each host's port (default 22); `lan-scan` sends ICMP echo and optional TCP connects (shipped profiles: 22, 80, 443) |
 | Depends on | no in-repo package; `ssh`, `klist`, `kinit`, `ping`, `ip`/`ifconfig`/`ipconfig` on the client |
 | Tests | 152 pytest cases in 7 modules (+ `conftest.py`, `__init__.py`); pass on Python 3.12.1 and 3.9.6 in this review |

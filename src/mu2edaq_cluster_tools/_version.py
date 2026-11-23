@@ -19,4 +19,4 @@ matching git release tag is zero-padded with a `t` prefix (e.g.
 """
 
 ## Package version string, major.minor.patch. Bump here and nowhere else.
-__version__ = "1.0.1"
+__version__ = "1.1.0"
