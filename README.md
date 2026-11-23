@@ -37,6 +37,63 @@ What does it do?
 
 ## Installation
 
+Requirements: Python 3.9 or newer and an OpenSSH client (`ssh`). The only
+Python dependencies are `textual` and `PyYAML`, which the installers fetch.
+No compiler and no root access are needed.
+
+### Quick start (recommended)
+
+The install script gives you a self-contained install, the bundled cluster
+configs, and the `ssh-selector`, `lan-scan`, `mu2essh`, `novassh` and
+`fnalssh` commands. Details are in [With the install script](#with-the-install-script).
+
+**macOS** (zsh is the default shell). The Xcode Command Line Tools
+`/usr/bin/python3` (3.9) is enough; a Homebrew Python works too.
+
+```bash
+git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
+cd mu2edaq-cluster-tools
+./install.sh
+# ~/.local/bin is not on the macOS PATH by default; add it once:
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc && source ~/.zshrc
+```
+
+**Linux (AlmaLinux 9 and similar).** `~/.local/bin` is normally already on
+`PATH` in login shells; the installer prints the line to add if it is not.
+
+```bash
+git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
+cd mu2edaq-cluster-tools
+./install.sh
+```
+
+**Windows 11.** Run the same Linux commands inside WSL. (Under Git Bash
+with a native Windows Python the venv layout differs and `install.sh` does
+not work; use [pip](#with-pip) there.)
+
+Check the install:
+
+```bash
+ssh-selector --version     # prints: ssh-selector 1.1.0
+mu2essh                    # opens straight on the Mu2e DAQ cluster
+novassh                    # ... the NOvA DAQ cluster
+fnalssh                    # ... the Fermilab GPVMs
+ssh-selector               # picker over all installed cluster configs
+```
+
+To upgrade, pull and run the installer again. The venv, configs and
+launchers are updated in place:
+
+```bash
+cd mu2edaq-cluster-tools && git pull && ./install.sh
+```
+
+To uninstall:
+
+```bash
+./install.sh --uninstall
+```
+
 ### With pip
 
 The application is a standard Python package and can be installed with `pip`.
@@ -52,6 +109,19 @@ Or from a local checkout:
 git clone https://github.com/Mu2e/mu2edaq-cluster-tools.git
 cd mu2edaq-cluster-tools
 pip install .            # add -e for an editable/development install
+```
+
+A pip install does not create the `mu2essh` / `novassh` / `fnalssh`
+shortcuts and does not copy the cluster configs anywhere. To get the same
+shortcuts, point aliases at a checkout's `config/` directory:
+
+```bash
+# bash / zsh (~/.bashrc, ~/.zshrc)
+alias mu2essh='ssh-selector -c ~/mu2edaq-cluster-tools/config/mu2e_daq.yaml'
+alias novassh='ssh-selector -c ~/mu2edaq-cluster-tools/config/nova_daq.yaml'
+alias fnalssh='ssh-selector -c ~/mu2edaq-cluster-tools/config/fnal_gpvm.yaml'
+# tcsh (~/.tcshrc)
+alias mu2essh 'ssh-selector -c ~/mu2edaq-cluster-tools/config/mu2e_daq.yaml'
 ```
 
 Then run it from a directory containing your `*.yaml` host config (or point at
@@ -165,6 +235,9 @@ pip install -e .          # installs the ssh-selector / lan-scan console scripts
 ssh-selector
 ```
 
+As with a plain pip install, no shortcuts are created; see the aliases under
+[With pip](#with-pip).
+
 Kerberos support on Windows is limited — it works within WSL and from PowerShell if Kerberos is configured, but MIT Kerberos for Windows has compatibility issues with some terminal emulators.
 
 ### Running the tests
@@ -197,6 +270,18 @@ ssh-selector -c path/to/hosts.yaml --check-concurrency 4
 
 # Print the version
 ssh-selector --version
+```
+
+The install script also provides one shortcut per bundled cluster. Each is
+`ssh-selector -c <install dir>/config/<file>`, and any other options are
+passed through:
+
+```bash
+mu2essh                          # Mu2e DAQ cluster   (mu2e_daq.yaml)
+novassh                          # NOvA DAQ cluster   (nova_daq.yaml)
+fnalssh                          # Fermilab GPVMs     (fnal_gpvm.yaml)
+mu2essh --check-concurrency 4    # options pass through
+mu2essh -c ~/my_hosts.yaml       # a later -c overrides the built-in one
 ```
 
 Running straight from a source checkout works too, once the package is
